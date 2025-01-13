@@ -1,4 +1,4 @@
-from TrussFrameASAP.gymenv.cantileverenv_convert_gymspaces import ObservationBijectiveMapping, ActionBijectiveMapping, ObservationDownSamplingMapping
+from libs.TrussFrameASAP.gymenv.cantileverenv_convert_gymspaces import ObservationBijectiveMapping, ActionBijectiveMapping, ObservationDownSamplingMapping
 from tqdm import tqdm  # Import tqdm for progress bar
 import numpy as np
 import time

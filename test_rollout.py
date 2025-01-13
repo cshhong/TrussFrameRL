@@ -1,5 +1,6 @@
 '''
 FINAL : load300_n3000 !!
+[TODO edit TrussFrameASAP directory path]
 '''
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,16 +8,16 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from gymnasium.utils.save_video import save_video
 import imageio
-import TrussFrameASAP.gymenv  # Register the custom environments with __init__.py
+import libs.TrussFrameASAP.gymenv  # Register the custom environments with __init__.py
 from tqdm import tqdm  # Import tqdm for the progress bar
 
 import os
 import h5py
 
-from TrussFrameASAP.PerformanceMap.h5_utils import *
-from TrussFrameASAP.PerformanceMap.render_loaded import RenderLoaded
-from TrussFrameASAP.PerformanceMap.perfmap import *
-from TrussFrameASAP.PerformanceMap.get_img_url import scrape_image_links
+from libs.TrussFrameASAP.PerformanceMap.h5_utils import *
+from libs.TrussFrameASAP.PerformanceMap.render_loaded import RenderLoaded
+from libs.TrussFrameASAP.PerformanceMap.perfmap import *
+from libs.TrussFrameASAP.PerformanceMap.get_img_url import scrape_image_links
 
 from sklearn.cluster import DBSCAN # for clustering
 
@@ -102,7 +103,7 @@ def random_rollout(env, h5f, num_eps_start=0, num_episodes=25, steps_per_episode
 if __name__ == "__main__":
 
     name = 'load300_n3000_binary'
-    h5dir = 'TrussFrameASAP/PerformanceMap/h5files'
+    #TODO direct to h3 directory!! h5dir = 'TrussFrameASAP/PerformanceMap/h5files'
     save_hdf5_filename = os.path.join(h5dir, f'{name}.h5')
     render_mode = "debug_all"
 

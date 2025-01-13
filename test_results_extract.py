@@ -3,15 +3,15 @@ From hdf5 file from training, get renders
 '''
 import os
 import h5py
-from TrussFrameASAP.PerformanceMap.h5_utils import *
-from TrussFrameASAP.PerformanceMap.render_loaded import RenderLoaded
-from TrussFrameASAP.PerformanceMap.perfmap import *
-from TrussFrameASAP.PerformanceMap.get_img_url import scrape_image_links
+from libs.TrussFrameASAP.PerformanceMap.h5_utils import *
+from libs.TrussFrameASAP.PerformanceMap.render_loaded import RenderLoaded
+from libs.TrussFrameASAP.PerformanceMap.perfmap import *
+from libs.TrussFrameASAP.PerformanceMap.get_img_url import scrape_image_links
 from sklearn.cluster import DBSCAN # for clustering
 
 # make env (temp)
 # import gymnasium as gym 
-# import TrussFrameASAP.gymenv 
+# import libs.TrussFrameASAP.gymenv 
 
 # Get total number of episodes
 name = "noinvalidpenalty_disp_inventoryleft_medonly_entcoef0.1"

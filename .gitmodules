@@ -1,0 +1,3 @@
+[submodule "libs/TrussFrameASAP"]
+	path = libs/TrussFrameASAP
+	url = https://github.com/cshhong/TrussFrameASAP.git

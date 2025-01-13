@@ -6,10 +6,10 @@ TODO edit hong_ppo main to save h5 files
 import sys
 sys.path.append("/Users/chong/Dropbox/2024Fall/TrussframeASAP-RL/")  # ensure Python can locate the TrussFrameASAP module 
 import gymnasium as gym
-import TrussFrameASAP.gymenv  # Explicitly import gymenv to execute __init__.py and register gym environments; only have to do once!
+import libs.TrussFrameASAP.gymenv  # Explicitly import gymenv to execute __init__.py and register gym environments; only have to do once!
 import os
 
-from cleanrl.cleanrl.hong_ppo_cantilever import Args, main
+from hong_ppo_cantilever import Args, main
 # from cleanrl.cleanrl.hong_ppo import Args, main
 from gymnasium.vector import SyncVectorEnv
 

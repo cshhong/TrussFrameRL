@@ -1,7 +1,7 @@
 train_h5/
 training_results/
 temp/
-TrussFrameASAP/
+# TrussFrameASAP/
 cleanrl/
 
 wandb/
