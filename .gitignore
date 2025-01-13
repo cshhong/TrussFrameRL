@@ -7,3 +7,4 @@ cleanrl/
 wandb/
 runs/
 .DS_Store
+.vscode/
