@@ -22,6 +22,11 @@ from gymnasium.utils.save_video import save_video
 
 from libs.TrussFrameASAP.PerformanceMap.h5_utils import *
 
+if torch.cuda.is_available():
+    print("CUDA is available. Using GPU.")
+else:
+    print("CUDA is not available. Using CPU.")
+
 
 @dataclass
 class Args:
@@ -33,7 +38,7 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = False
+    track_wb: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
     wandb_project_name: str = "cleanRL"
     """the wandb's project name"""
@@ -43,6 +48,9 @@ class Args:
     # """whether to capture videos of the agent performances (check out `videos` folder)"""
     render_mode: str = None
     render_dir: str = "render"
+    # Additional arguments (Hong)
+    """save h5 file used for plotting all terminated episodes"""
+    save_h5: bool = True
 
     # Algorithm specific arguments
     env_id: str = "Cantilever-v0"
@@ -79,6 +87,10 @@ class Args:
     """the maximum norm for the gradient clipping"""
     target_kl: float = None
     """the target KL divergence threshold"""
+
+    # Additional algorithm specific arguments (Hong)
+    """number of random actions to take at start of env that are not registered as trajectory"""
+    rand_init_steps: int = 0
 
     # to be filled in runtime
     batch_size: int = 0
@@ -148,6 +160,9 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 class Agent(nn.Module):
     def __init__(self, envs):
+        '''
+        envs : Gymnasium.vector.VectorEnv object (https://gymnasium.farama.org/api/vector/#gymnasium.vector.VectorEnv)
+        '''
         super().__init__()
         self.critic = nn.Sequential(
             layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
@@ -167,11 +182,34 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None):
-        logits = self.actor(x)
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
+    def get_action_and_value(self, x, fixed_action=None, action_mask=None):
+        '''
+        get next action based on actor network output
+        x : next_obs from previous step (batch_size, obs_space)
+        action_mask : np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible
+
+        * actions are selected with action mask, but log probabilities are calculated without action mask
+        return : action, log_prob, entropy, value
+        # TODO what are the probs of unused cells? how does it affect overall logit distribution and approxmiate kl divergence?
+        '''
+        logits = self.actor(x) # (action_space, )
+        probs = Categorical(logits=logits) # softmax
+        # print(f'action probs : {probs.probs}')
+        
+        # Action selection 
+        if fixed_action == None:
+            if action_mask is not None: # mask invalid actions to get next action
+                print(f' get_action_and_value applying action mask...')
+                # print(f'applying action mask : {action_mask}')
+                masked_probs = probs.probs * action_mask
+                norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
+                # print(f'normalized masked action probs : {norm_masked_probs}')
+                action = Categorical(probs=norm_masked_probs).sample()
+            else:
+                print(f'action mask is None')
+                action = probs.sample()
+        else:
+            action = fixed_action
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
 def video_save_trigger(n_epi):
@@ -185,7 +223,11 @@ def video_save_trigger(n_epi):
     #     return False
     return True
 
-def main(args):
+def train(args):
+    '''
+    Train the agent using PPO algorithm
+    args : Args object containing hyperparameters
+    '''
     # args = tyro.cli(Args)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -196,7 +238,7 @@ def main(args):
     name = args.exp_name
     # run_name = f"{args.env_id}_seed{args.seed}_{current_time}_{name}"
     run_name = f"{args.env_id}_{name}"
-    if args.track:
+    if args.track_wb:
         import wandb
 
         wandb.init(
@@ -208,6 +250,8 @@ def main(args):
             monitor_gym=True,
             save_code=True, # saves the code used for the run to WandB servers at start
         )
+    
+    # Save data in event file that can be opened with TensorBoard
     writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
@@ -227,13 +271,18 @@ def main(args):
     # envs = gym.vector.SyncVectorEnv(
     #     [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
     # )
-    envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
-    assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    # envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
+    envs = gym.make(args.env_id, render_mode=args.render_mode, render_dir=args.render_dir) # TODO 
+    print(f'env action space : {envs.action_space}')
+    if isinstance(envs, gym.Env): # single env
+        assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
+        assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported" 
 
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
-    # ALGO Logic: Storage setup
+    # ALGO Logic: Storage setup (takes into consideration multiple environments)
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -248,15 +297,18 @@ def main(args):
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
 
-    term_eps_idx =0 # count episodes where designs were completed (terminated)
-    # Open the HDF5 file at the beginning of rollout
-    h5dir = 'train_h5'
-    save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
-    h5f = h5py.File(save_hdf5_filename, 'a', track_order=True)  # Use 'w' to overwrite or 'a' to append
+    # create h5py file
+    if args.save_h5:
+        term_eps_idx =0 # count episodes where designs were completed (terminated)
+        # Open the HDF5 file at the beginning of rollout
+        h5dir = 'train_h5'
+        save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
+        h5f = h5py.File(save_hdf5_filename, 'a', track_order=True)  # Use 'w' to overwrite or 'a' to append
 
-    with h5py.File(save_hdf5_filename, 'a', track_order=True) as f:
-        save_env_render_properties(f, envs)
+        with h5py.File(save_hdf5_filename, 'a', track_order=True) as f:
+            save_env_render_properties(f, envs)
 
+    # Start iterations
     for iteration in range(1, args.num_iterations + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -264,21 +316,42 @@ def main(args):
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        if args.rand_init_steps > 0:
+            print(f'Random initialization of env for {args.rand_init_steps} steps')
+            assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
+            for _ in range(args.rand_init_steps):
+                with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                    curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
+                    action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
+                    if isinstance(action, torch.Tensor):
+                        next_obs, reward, terminated, truncated, info = envs.step(action.cpu().numpy())
+                    else:
+                        next_obs, reward, terminated, truncated, info = envs.step(action)
+                    next_obs = torch.Tensor(next_obs).to(device)
+                    
+                    print(f'random action : {envs.action_converter.decode(action)}')  
+
         for step in range(0, args.num_steps):
-            global_step += args.num_envs
+            global_step += args.num_envs # shape is (args.num_steps, args.num_envs, envs.single_observation_space.shape) 
             obs[step] = next_obs
             dones[step] = next_done
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                curr_mask = envs.get_action_mask()
+                decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
+                # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
+                action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
 
+            print(f'action : {action}')
+
             # TRY NOT TO MODIFY: execute the game and log data.
             # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+            # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+            next_obs, reward, terminations, truncations, info = envs.step(action)
             next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
@@ -286,11 +359,10 @@ def main(args):
             if terminations == True or truncations == True:
                 # print("terminated or truncated!")
                 # print(f"global_step={global_step}, episodic_return={info['final_info']['episode']['r']}, episodic_length={info['final_info']['episode']['l']}")
-                writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["r"], global_step)
-                writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["l"], global_step)
+                writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
+                writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
 
                 if terminations == True: # complete design
-                    term_eps_idx += 1 # count episodes where designs were completed (terminated)
                     # TODO optionally save video
                     if envs.render_mode == "rgb_list":
                         assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
@@ -304,20 +376,16 @@ def main(args):
                                     # step_starting_index=step_starting_index,
                                     episode_trigger = video_save_trigger 
                         )
-                    # save data to hdf5 file
-                    save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
-                    # Flush (save) data to disk (optional - may slow down training)
-                    h5f.flush()
+                    if args.save_h5:
+                        term_eps_idx += 1 # count episodes where designs were completed (terminated)
+                        # Save data to hdf5 file
+                        save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
+                        # Flush (save) data to disk (optional - may slow down training)
+                        h5f.flush()
 
                 envs.reset(seed=args.seed)
 
-
-            # if "final_info" in infos:
-            #     for info in infos["final_info"]:
-            #         if info and "episode" in info:
-            #             print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-            #             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-            #             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+            
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -352,7 +420,7 @@ def main(args):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
