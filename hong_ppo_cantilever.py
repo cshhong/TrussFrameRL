@@ -46,12 +46,13 @@ class Args:
     """the entity (team) of wandb's project"""
     # capture_video: bool = False
     # """whether to capture videos of the agent performances (check out `videos` folder)"""
-    render_mode: str = None
+    render_mode: str = None #  [None, "debug_all", "debug_valid", "rgb_list", "debug_end", "rgb_end", "rgb_end_interval"]
     render_dir: str = "render"
     # Additional arguments (Hong)
     """save h5 file used for plotting all terminated episodes"""
     save_h5: bool = True
-
+    render_interval: int = 1000 # interval (num eps) to save render for render mode "rgb_end_interval" and "rgb_list"
+    render_interval_count : int = 10 # number of consecutive renders to save for render mode "rgb_list" at each interval 
     # Algorithm specific arguments
     env_id: str = "Cantilever-v0"
     """the id of the environment"""
@@ -91,14 +92,15 @@ class Args:
     # Additional algorithm specific arguments (Hong)
     """number of random actions to take at start of env that are not registered as trajectory"""
     rand_init_steps: int = 0
+    rand_init_seed: int = None
 
     # to be filled in runtime
     batch_size: int = 0
     """the batch size (computed in runtime)"""
     minibatch_size: int = 0
     """the mini-batch size (computed in runtime)"""
-    num_iterations: int = 0
-    """the number of iterations (computed in runtime)"""
+    num_iterations: int = 0 # rounds of training the policy
+    """the number of iterations (computed in runtime)""" 
 
 
 # def make_env(env_id, idx, capture_video, run_name):
@@ -113,7 +115,7 @@ class Args:
 
 #     return thunk
 
-def make_env(env_id, run_name, render_mode=None, video_save_interval_steps=500, render_dir='render', max_episode_length=200, obs_mode='frame_grid'):
+def make_env(env_id, run_name, render_mode=None, render_save_interval=1, render_dir='render', max_episode_length=200, obs_mode='frame_grid'):
     """
     Factory function to create and configure a Gym environment.
 
@@ -121,7 +123,7 @@ def make_env(env_id, run_name, render_mode=None, video_save_interval_steps=500, 
     :param idx: The index of the environment (used for configuration).
     :param run_name: The name of the current run (used for video directory).
     :param render_mode: Render mode for the environment (e.g., 'rgb_array', 'debug_all').
-    :param video_save_interval_steps: Interval (in steps) to save videos.
+    :param render_save_interval: Interval (in steps) to save videos.
     :param render_dir: Directory where render outputs (e.g., videos) are saved.
     :param max_episode_length: Maximum length of an episode.
     :param obs_mode: Observation mode for the environment (e.g., 'frame_grid').
@@ -132,16 +134,17 @@ def make_env(env_id, run_name, render_mode=None, video_save_interval_steps=500, 
         # env = gym.make(env_id, render_mode=render_mode)
         env = gym.make(env_id, render_mode=render_mode, render_dir=render_dir)
 
+        # Set up video recording for rgb_list render mode
         # Only the first environment records videos
-        if render_mode == 'rbg_list' :
-            env = gym.wrappers.RecordVideo(
-                                            env,
-                                            video_folder=f"{render_dir}/{run_name}",
-                                            episode_trigger=lambda episode_id: episode_id % video_save_interval_steps == 0
-            )
+        # if render_mode == 'rgb_list':
+        #     env = gym.wrappers.RecordVideo(
+        #                                     env,
+        #                                     video_folder=f"{render_dir}/{run_name}",
+        #                                     episode_trigger=lambda episode_idx: episode_idx % render_save_interval == 0
+        #     )
 
-            # Additional configuration of the environment
-            env.metadata["render_fps"] = 1  # Example metadata customization
+        #     # Additional configuration of the environment
+        #     env.metadata["render_fps"] = 1  # Example metadata customization
         env.max_episode_length = max_episode_length
         env.obs_mode = obs_mode
         
@@ -199,35 +202,38 @@ class Agent(nn.Module):
         # Action selection 
         if fixed_action == None:
             if action_mask is not None: # mask invalid actions to get next action
-                print(f' get_action_and_value applying action mask...')
                 # print(f'applying action mask : {action_mask}')
                 masked_probs = probs.probs * action_mask
                 norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
-                # print(f'normalized masked action probs : {norm_masked_probs}')
+                # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
                 action = Categorical(probs=norm_masked_probs).sample()
-            else:
+            else: # sample action without mask
                 print(f'action mask is None')
                 action = probs.sample()
         else:
             action = fixed_action
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
-def video_save_trigger(n_epi):
+def video_save_trigger(episode_index):
     '''
+    function that takes episode index and returns True if video should be saved used in save_video
     used as trigger to save video using gymnasium.utils.save_video
     '''
-    # if n_epi % VIDEO_INTERVAL == 0:
-    #     print("Saving render!")
-    #     return True 
-    # else:
-    #     return False
-    return True
+    if episode_index % args.render_interval < args.render_interval_count: # save args.render_interval_count consecutive videos at render intervals 
+        print(f"Saving render at terminated episode count {episode_index}!")
+        return True 
+    else:
+        return False
+    # return True
 
-def train(args):
+def train(args_param):
     '''
     Train the agent using PPO algorithm
     args : Args object containing hyperparameters
     '''
+    global args # to use same args in video_save_trigger
+    args = args_param
+
     # args = tyro.cli(Args)
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
@@ -272,7 +278,7 @@ def train(args):
     #     [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
     # )
     # envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
-    envs = gym.make(args.env_id, render_mode=args.render_mode, render_dir=args.render_dir) # TODO 
+    envs = gym.make(args.env_id, render_mode=args.render_mode, render_save_interval=args.render_interval, render_dir=args.render_dir) # TODO 
     print(f'env action space : {envs.action_space}')
     if isinstance(envs, gym.Env): # single env
         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
@@ -297,9 +303,11 @@ def train(args):
     next_obs = torch.Tensor(next_obs).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
 
+    # Episode count 
+    term_eps_idx =0 # count episodes where designs were completed (terminated)
+
     # create h5py file
     if args.save_h5:
-        term_eps_idx =0 # count episodes where designs were completed (terminated)
         # Open the HDF5 file at the beginning of rollout
         h5dir = 'train_h5'
         save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
@@ -316,38 +324,52 @@ def train(args):
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        # Set random initialization 
+        rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down
+        assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
         if args.rand_init_steps > 0:
-            print(f'Random initialization of env for {args.rand_init_steps} steps')
-            assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
-            for _ in range(args.rand_init_steps):
-                with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
-                    curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
-                    action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
-                    if isinstance(action, torch.Tensor):
-                        next_obs, reward, terminated, truncated, info = envs.step(action.cpu().numpy())
-                    else:
-                        next_obs, reward, terminated, truncated, info = envs.step(action)
-                    next_obs = torch.Tensor(next_obs).to(device)
-                    
-                    print(f'random action : {envs.action_converter.decode(action)}')  
-
-        for step in range(0, args.num_steps):
+            envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs
+        # print(f'envs.n_rand_init_steps : {envs.n_rand_init_steps}')
+        # Rollout
+        for step in range(0, args.num_steps): # total number of steps regardless of number of eps
             global_step += args.num_envs # shape is (args.num_steps, args.num_envs, envs.single_observation_space.shape) 
             obs[step] = next_obs
             dones[step] = next_done
 
-            # ALGO LOGIC: action logic
-            with torch.no_grad():
-                curr_mask = envs.get_action_mask()
-                decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
-                # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask)
-                values[step] = value.flatten()
-            actions[step] = action
-            logprobs[step] = logprob
+            if rand_init_counter > 0: # sample random action at initialization of episode
+                with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                    curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
+                    # valid_idx = np.where(curr_mask == 1)[0]
+                    # print(f'valid idx : {valid_idx}')
+                    # print(f'random curr mask actions : {[envs.action_converter.decode(x) for x in valid_idx]}')  # get decoded action values for value 1 in curr_mask
+                    if args.rand_init_seed != None:
+                        action = envs.action_space.sample(mask=curr_mask, seed=args.rand_init_seed)  # sample random action with action mask
+                    else:
+                        action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
+                    if isinstance(action, torch.Tensor):
+                        action = action.cpu().numpy()
+                    # else:
+                    next_obs = torch.Tensor(next_obs).to(device)
+                    
+                    # print(f'random action {args.rand_init_steps - rand_init_counter} \ {args.rand_init_steps} : {envs.action_converter.decode(action)}')  
+                    # envs.rand_init_actions += [action] # register random action int to envs.rand_init_actions for vis
+                    envs.add_rand_action(action)
+                    # print(f'envs.rand_init_actions : {envs.rand_init_actions}')
+                rand_init_counter -= 1
 
-            print(f'action : {action}')
+            else: # ALGO LOGIC: action according to policy
+                with torch.no_grad():
+                    curr_mask = envs.get_action_mask()
+                    decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
+                    # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
+                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask)
+                    values[step] = value.flatten()
+                actions[step] = action
+                logprobs[step] = logprob
 
+                # print(f'action : {action} | {envs.action_converter.decode(action)}') # DEBUG decode reverts action to 0,0,0,0?!
+                # print(f'action : {action} ')
+            
             # TRY NOT TO MODIFY: execute the game and log data.
             # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
             # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
@@ -355,7 +377,7 @@ def train(args):
             next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
-
+            
             if terminations == True or truncations == True:
                 # print("terminated or truncated!")
                 # print(f"global_step={global_step}, episodic_return={info['final_info']['episode']['r']}, episodic_length={info['final_info']['episode']['l']}")
@@ -371,19 +393,21 @@ def train(args):
                                     video_folder=args.render_dir,
                                     fps=envs.metadata["render_fps"],
                                     # video_length = ,
-                                    # name_prefix = f"Episode ",
-                                    episode_index = iteration+1,
+                                    name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                    episode_index = term_eps_idx, # why need +1?
                                     # step_starting_index=step_starting_index,
-                                    episode_trigger = video_save_trigger 
+                                    episode_trigger = video_save_trigger
                         )
+                    term_eps_idx += 1 # count episodes where designs were completed (terminated)
                     if args.save_h5:
-                        term_eps_idx += 1 # count episodes where designs were completed (terminated)
                         # Save data to hdf5 file
                         save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
                         # Flush (save) data to disk (optional - may slow down training)
                         h5f.flush()
 
                 envs.reset(seed=args.seed)
+                rand_init_counter = args.rand_init_steps # reset random initialization counter
+
 
             
 
