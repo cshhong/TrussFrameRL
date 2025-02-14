@@ -278,7 +278,22 @@ def train(args_param):
     #     [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
     # )
     # envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
-    envs = gym.make(args.env_id, render_mode=args.render_mode, render_save_interval=args.render_interval, render_dir=args.render_dir) # TODO 
+    envs = gym.make(
+                    # args.env_id, 
+                    # render_mode=args.render_mode, 
+                    # render_save_interval=args.render_interval, 
+                    # render_dir=args.render_dir, 
+                    # rand_init_seed=args.rand_init_seed
+                    
+                    id=args.env_id,
+                    render_mode=args.render_mode,
+                    render_interval_eps=args.render_interval,
+                    render_interval_consecutive=args.render_interval_count,
+                    render_dir = args.render_dir,
+                    max_episode_length = 400,
+                    obs_mode='frame_grid',
+                    rand_init_seed = args.rand_init_seed,) # TODO 
+    
     print(f'env action space : {envs.action_space}')
     if isinstance(envs, gym.Env): # single env
         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
