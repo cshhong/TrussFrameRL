@@ -1,3 +1,4 @@
-[submodule "libs/TrussFrameASAP"]
+[submodule "TrussFrameASAP"]
 	path = libs/TrussFrameASAP
 	url = https://github.com/cshhong/TrussFrameASAP.git
+	branch = main
