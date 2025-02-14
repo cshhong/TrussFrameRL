@@ -103,58 +103,6 @@ class Args:
     """the number of iterations (computed in runtime)""" 
 
 
-# def make_env(env_id, idx, capture_video, run_name):
-#     def thunk():
-#         if capture_video and idx == 0:
-#             env = gym.make(env_id, render_mode="rgb_array")
-#             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-#         else:
-#             env = gym.make(env_id)
-#         env = gym.wrappers.RecordEpisodeStatistics(env)
-#         return env
-
-#     return thunk
-
-def make_env(env_id, run_name, render_mode=None, render_save_interval=1, render_dir='render', max_episode_length=200, obs_mode='frame_grid'):
-    """
-    Factory function to create and configure a Gym environment.
-
-    :param env_id: The ID of the Gym environment.
-    :param idx: The index of the environment (used for configuration).
-    :param run_name: The name of the current run (used for video directory).
-    :param render_mode: Render mode for the environment (e.g., 'rgb_array', 'debug_all').
-    :param render_save_interval: Interval (in steps) to save videos.
-    :param render_dir: Directory where render outputs (e.g., videos) are saved.
-    :param max_episode_length: Maximum length of an episode.
-    :param obs_mode: Observation mode for the environment (e.g., 'frame_grid').
-    :return: A thunk (function) that creates and configures the environment when called.
-    """
-    def thunk():
-        # Always create the base environment
-        # env = gym.make(env_id, render_mode=render_mode)
-        env = gym.make(env_id, render_mode=render_mode, render_dir=render_dir)
-
-        # Set up video recording for rgb_list render mode
-        # Only the first environment records videos
-        # if render_mode == 'rgb_list':
-        #     env = gym.wrappers.RecordVideo(
-        #                                     env,
-        #                                     video_folder=f"{render_dir}/{run_name}",
-        #                                     episode_trigger=lambda episode_idx: episode_idx % render_save_interval == 0
-        #     )
-
-        #     # Additional configuration of the environment
-        #     env.metadata["render_fps"] = 1  # Example metadata customization
-        env.max_episode_length = max_episode_length
-        env.obs_mode = obs_mode
-        
-        # Wrappers for additional functionality
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        return env
-
-    return thunk
-
-
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -357,10 +305,8 @@ def train(args_param):
                     # valid_idx = np.where(curr_mask == 1)[0]
                     # print(f'valid idx : {valid_idx}')
                     # print(f'random curr mask actions : {[envs.action_converter.decode(x) for x in valid_idx]}')  # get decoded action values for value 1 in curr_mask
-                    if args.rand_init_seed != None:
-                        action = envs.action_space.sample(mask=curr_mask, seed=args.rand_init_seed)  # sample random action with action mask
-                    else:
-                        action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
+                    
+                    action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
                     # else:
@@ -400,7 +346,6 @@ def train(args_param):
                 writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
 
                 if terminations == True: # complete design
-                    # TODO optionally save video
                     if envs.render_mode == "rgb_list":
                         assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
                         save_video(
