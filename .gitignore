@@ -8,3 +8,5 @@ wandb/
 runs/
 .DS_Store
 .vscode/
+
+render/
