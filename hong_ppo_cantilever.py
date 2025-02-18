@@ -133,7 +133,7 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, fixed_action=None, action_mask=None):
+    def get_action_and_value(self, x, fixed_action=None, action_mask=None, eps=1e-2):
         '''
         get next action based on actor network output
         x : next_obs from previous step (batch_size, obs_space)
@@ -149,15 +149,25 @@ class Agent(nn.Module):
         
         # Action selection 
         if fixed_action == None:
-            if action_mask is not None: # mask invalid actions to get next action
-                # print(f'applying action mask : {action_mask}')
-                masked_probs = probs.probs * action_mask
-                norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
-                # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
-                action = Categorical(probs=norm_masked_probs).sample()
-            else: # sample action without mask
-                print(f'action mask is None')
-                action = probs.sample()
+            # Epsilon greedy action selection
+            if np.random.rand() < eps:
+                if action_mask is not None:
+                    # print(f'    eps random action with action mask')
+                    valid_actions = np.where(action_mask == 1)[0]
+                    action = torch.tensor(np.random.choice(valid_actions))
+                else:
+                    # print(f'    action mask is None (eps random action)')
+                    action = torch.tensor(np.random.randint(len(probs.probs)))
+            else:
+                if action_mask is not None: # mask invalid actions to get next action
+                    # print(f'applying action mask : {action_mask}')
+                    masked_probs = probs.probs * action_mask
+                    norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
+                    # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
+                    action = Categorical(probs=norm_masked_probs).sample()
+                else: # sample action without mask
+                    print(f'action mask is None')
+                    action = probs.sample()
         else:
             action = fixed_action
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
