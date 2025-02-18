@@ -338,7 +338,7 @@ def train(args_param):
                     curr_mask = envs.get_action_mask()
                     decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                     # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask)
+                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, eps=1e-2)
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
