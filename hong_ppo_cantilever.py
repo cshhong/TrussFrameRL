@@ -62,7 +62,7 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    num_steps: int = 128
+    num_steps_rollout: int = 128
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -193,7 +193,7 @@ def train(args_param):
     args = args_param
 
     # args = tyro.cli(Args)
-    args.batch_size = int(args.num_envs * args.num_steps)
+    args.batch_size = int(args.num_envs * args.num_steps_rollout)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # args.num_iterations = args.total_timesteps // args.batch_size
     args.num_iterations = int(args.total_timesteps // args.batch_size)
@@ -262,12 +262,12 @@ def train(args_param):
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps, args.num_envs)).to(device)
+    obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
+    logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
 
     # TRY NOT TO MODIFY: start the game
     global_step = 0
@@ -386,8 +386,8 @@ def train(args_param):
             next_value = agent.get_value(next_obs).reshape(1, -1)
             advantages = torch.zeros_like(rewards).to(device)
             lastgaelam = 0
-            for t in reversed(range(args.num_steps)):
-                if t == args.num_steps - 1:
+            for t in reversed(range(args.num_steps_rollout)):
+                if t == args.num_steps_rollout - 1:
                     nextnonterminal = 1.0 - next_done
                     nextvalues = next_value
                 else:
