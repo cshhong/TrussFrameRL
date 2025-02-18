@@ -170,6 +170,7 @@ class Agent(nn.Module):
                     action = probs.sample()
         else:
             action = fixed_action
+
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
 def video_save_trigger(episode_index):
@@ -298,18 +299,22 @@ def train(args_param):
             optimizer.param_groups[0]["lr"] = lrnow
 
         # Set random initialization 
-        rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down
         assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
         if args.rand_init_steps > 0:
-            envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs
+            envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
         # print(f'envs.n_rand_init_steps : {envs.n_rand_init_steps}')
+
         # Rollout
-        for step in range(0, args.num_steps): # total number of steps regardless of number of eps
-            global_step += args.num_envs # shape is (args.num_steps, args.num_envs, envs.single_observation_space.shape) 
+        for step in range(0, args.num_steps_rollout): # total number of steps regardless of number of eps
+            global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
             obs[step] = next_obs
             dones[step] = next_done
 
+            if envs.reset_env_bool == True: # initialize random actions at reset of env
+                rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
+            
             if rand_init_counter > 0: # sample random action at initialization of episode
+                # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
                 with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
                     curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
                     # valid_idx = np.where(curr_mask == 1)[0]
@@ -320,12 +325,12 @@ def train(args_param):
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
                     # else:
-                    next_obs = torch.Tensor(next_obs).to(device)
+                    # next_obs = torch.Tensor(next_obs).to(device)
                     
                     # print(f'random action {args.rand_init_steps - rand_init_counter} \ {args.rand_init_steps} : {envs.action_converter.decode(action)}')  
                     # envs.rand_init_actions += [action] # register random action int to envs.rand_init_actions for vis
                     envs.add_rand_action(action)
-                    # print(f'envs.rand_init_actions : {envs.rand_init_actions}')
+                    # print(f'step {envs.global_steps} random init counter : {rand_init_counter} envs.rand_init_actions : {envs.rand_init_actions}')
                 rand_init_counter -= 1
 
             else: # ALGO LOGIC: action according to policy
@@ -350,7 +355,7 @@ def train(args_param):
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
             
             if terminations == True or truncations == True:
-                # print("terminated or truncated!")
+                # print(f"terminated{terminations} or truncated{truncations}!")
                 # print(f"global_step={global_step}, episodic_return={info['final_info']['episode']['r']}, episodic_length={info['final_info']['episode']['l']}")
                 writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
                 writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
