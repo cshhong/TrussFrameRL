@@ -365,7 +365,10 @@ def train(args_param):
                     curr_mask = envs.get_action_mask()
                     decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                     # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, eps=1e-2)
+                    if np.all(curr_mask == 0): # prevent nan in get_action_and_value
+                        print(f'curr_mask is all zeros!')
+                        envs.reset(seed=args.seed)
+                        rand_init_counter = args.rand_init_steps # reset random initialization counter
                         continue
                     action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
                     values[step] = value.flatten()
