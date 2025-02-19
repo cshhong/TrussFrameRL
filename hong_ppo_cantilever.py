@@ -509,3 +509,151 @@ def train(args_param):
 
     envs.close()
     writer.close()
+
+def run_inference(args_param):
+    '''
+    Run rollouts using trained policy
+    '''
+    global args # to use same args in video_save_trigger
+    args = args_param
+
+    name = args.exp_name
+    run_name = f"inference_{args.env_id}_{name}"
+
+    if args.track_wb:
+        import wandb
+
+        wandb.init(
+            project=args.wandb_project_name,
+            entity=args.wandb_entity,
+            sync_tensorboard=True, # automatric syncing of W&B logs from TensorBoard(writer)
+            config=vars(args),
+            name=run_name,
+            monitor_gym=True,
+            save_code=True, # saves the code used for the run to WandB servers at start
+        )
+
+    writer = SummaryWriter(f"runs/{run_name}")
+    writer.add_text(
+        "hyperparameters",
+        "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
+    )
+
+    # TRY NOT TO MODIFY: seeding
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = args.torch_deterministic
+
+    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+
+    envs = gym.make(
+                    id=args.env_id,
+                    render_mode=args.render_mode,
+                    render_interval_eps=args.render_interval,
+                    render_interval_consecutive=args.render_interval_count,
+                    render_dir = args.render_dir,
+                    max_episode_length = 400,
+                    obs_mode='frame_grid',
+                    rand_init_seed = args.rand_init_seed,) # TODO 
+
+    print(f'env action space : {envs.action_space}')
+    if isinstance(envs, gym.Env): # single env
+        assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
+    if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
+        assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported" 
+
+    # TODO load from trained model
+    agent = Agent(envs).to(device)
+    assert args.load_checkpoint, "args.load_checkpoint should be True for inference"
+    assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
+    checkpoint = torch.load(args.load_checkpoint_path)
+    # Load the model state dictionary
+    agent.load_state_dict(checkpoint['model_state_dict'])
+    # Load the optimizer state dictionary
+    print(f"Model loaded from checkpoint {args.load_checkpoint_path}!")
+
+    # LOGs
+    rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    
+    # TRY NOT TO MODIFY: start the game
+    global_step = 0
+    start_time = time.time()
+    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs = torch.Tensor(next_obs).to(device)
+    next_done = torch.zeros(args.num_envs).to(device)
+
+    # Episode count 
+    term_eps_idx =0 # count episodes where designs were completed (terminated)
+
+    # create h5py file
+    if args.save_h5:
+        # Open the HDF5 file at the beginning of rollout
+        h5dir = 'train_h5'
+        save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
+        h5f = h5py.File(save_hdf5_filename, 'a', track_order=True)  # Use 'w' to overwrite or 'a' to append
+
+        with h5py.File(save_hdf5_filename, 'a', track_order=True) as f:
+            save_env_render_properties(f, envs)
+
+    # Set random initialization 
+    assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
+    if args.rand_init_steps > 0:
+        envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
+
+     # Rollout
+    for step in range(0, args.num_steps_rollout): # total number of steps regardless of number of eps
+        global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
+
+        if envs.reset_env_bool == True: # initialize random actions at reset of env
+            rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
+        if rand_init_counter > 0: # sample random action at initialization of episode
+            with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                curr_mask = envs.get_action_mask() 
+                action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
+                if isinstance(action, torch.Tensor):
+                    action = action.cpu().numpy()
+                envs.add_rand_action(action)
+            rand_init_counter -= 1
+
+        else: # ALGO LOGIC: action according to policy
+            with torch.no_grad():
+                curr_mask = envs.get_action_mask()
+                # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
+                # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
+                action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, eps=1e-2)
+        
+        next_obs, reward, terminations, truncations, info = envs.step(action)
+        next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
+        rewards[step] = torch.tensor(reward).to(device).view(-1)
+        next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+
+        if terminations == True or truncations == True:
+            writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
+            writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
+            
+            if terminations == True: # complete design
+                if envs.render_mode == "rgb_list":
+                    assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
+                    save_video(
+                                frames=envs.get_render_list(),
+                                video_folder=args.render_dir,
+                                fps=envs.metadata["render_fps"],
+                                # video_length = ,
+                                name_prefix = f"infer", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                episode_index = term_eps_idx, # why need +1?
+                                # step_starting_index=step_starting_index,
+                                episode_trigger = video_save_trigger
+                    )
+                term_eps_idx += 1 # count episodes where designs were completed (terminated)
+                if args.save_h5:
+                    # Save data to hdf5 file
+                    save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
+                    # Flush (save) data to disk (optional - may slow down training)
+                    h5f.flush()
+
+            envs.reset(seed=args.seed)
+            rand_init_counter = args.rand_init_steps # reset random initialization counter
+
+    envs.close()
+    writer.close()
