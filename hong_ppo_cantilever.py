@@ -22,6 +22,8 @@ from gymnasium.utils.save_video import save_video
 
 from libs.TrussFrameASAP.PerformanceMap.h5_utils import *
 
+from tqdm import tqdm
+
 if torch.cuda.is_available():
     print("CUDA is available. Using GPU.")
 else:
@@ -291,7 +293,8 @@ def train(args_param):
             save_env_render_properties(f, envs)
 
     # Start iterations
-    for iteration in range(1, args.num_iterations + 1):
+    # for iteration in range(1, args.num_iterations + 1):
+    for iteration in tqdm(range(1, args.num_iterations + 1), desc="Iterations"):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
