@@ -113,6 +113,8 @@ class Args:
     checkpoint_interval_steps: int = 0
     """interval in saving model (computed in runtime)""" 
 
+    epsilon_greedy: float = 1e-3
+
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -145,7 +147,7 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, fixed_action=None, action_mask=None, eps=1e-2):
+    def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
         '''
         get next action based on actor network output
         x : next_obs from previous step (batch_size, obs_space)
@@ -162,13 +164,13 @@ class Agent(nn.Module):
         # Action selection 
         if fixed_action == None:
             # Epsilon greedy action selection
-            if np.random.rand() < eps:
+            if np.random.rand() < epsilon_greedy:
                 if action_mask is not None:
-                    # print(f'    eps random action with action mask')
+                    # print(f'    epsilon_greedy random action with action mask')
                     valid_actions = np.where(action_mask == 1)[0]
                     action = torch.tensor(np.random.choice(valid_actions))
                 else:
-                    # print(f'    action mask is None (eps random action)')
+                    # print(f'    action mask is None (epsilon_greedy random action)')
                     action = torch.tensor(np.random.randint(len(probs.probs)))
             else:
                 if action_mask is not None: # mask invalid actions to get next action
@@ -324,13 +326,12 @@ def train(args_param):
             optimizer.param_groups[0]["lr"] = lrnow
 
         # Set random initialization 
-        assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
         if args.rand_init_steps > 0:
             envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
         # print(f'envs.n_rand_init_steps : {envs.n_rand_init_steps}')
 
         # Rollout
-        for step in range(0, args.num_steps_rollout): # total number of steps regardless of number of eps
+        for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
             global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
             # save checkpoint at intervals
             if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
@@ -365,6 +366,8 @@ def train(args_param):
                     decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                     # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
                     action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, eps=1e-2)
+                        continue
+                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
@@ -621,7 +624,7 @@ def run_inference(args_param):
                 curr_mask = envs.get_action_mask()
                 # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                 # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, eps=1e-2)
+                action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
         
         next_obs, reward, terminations, truncations, info = envs.step(action)
         next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
