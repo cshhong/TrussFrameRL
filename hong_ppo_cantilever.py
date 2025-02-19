@@ -104,11 +104,21 @@ class Args:
     num_iterations: int = 0 # rounds of training the policy
     """the number of iterations (computed in runtime)""" 
 
+    # load model to resume training / inference
+    load_checkpoint: bool = False
+    load_checkpoint_path: str = None
+
+    # save model during training
+    save_checkpoint: bool = True
+    checkpoint_interval_steps: int = 0
+    """interval in saving model (computed in runtime)""" 
+
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
+
 
 
 class Agent(nn.Module):
@@ -174,6 +184,7 @@ class Agent(nn.Module):
             action = fixed_action
 
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+    
 
 def video_save_trigger(episode_index):
     '''
@@ -186,6 +197,7 @@ def video_save_trigger(episode_index):
     else:
         return False
     # return True
+
 
 def train(args_param):
     '''
@@ -200,18 +212,21 @@ def train(args_param):
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # args.num_iterations = args.total_timesteps // args.batch_size
     args.num_iterations = int(args.total_timesteps // args.batch_size)
+    args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
+
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = args.exp_name
     # run_name = f"{args.env_id}_seed{args.seed}_{current_time}_{name}"
     run_name = f"{args.env_id}_{name}"
+
     if args.track_wb:
         import wandb
 
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
-            sync_tensorboard=True,
+            sync_tensorboard=True, # automatric syncing of W&B logs from TensorBoard(writer)
             config=vars(args),
             name=run_name,
             monitor_gym=True,
@@ -240,12 +255,6 @@ def train(args_param):
     # )
     # envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
     envs = gym.make(
-                    # args.env_id, 
-                    # render_mode=args.render_mode, 
-                    # render_save_interval=args.render_interval, 
-                    # render_dir=args.render_dir, 
-                    # rand_init_seed=args.rand_init_seed
-                    
                     id=args.env_id,
                     render_mode=args.render_mode,
                     render_interval_eps=args.render_interval,
@@ -261,8 +270,6 @@ def train(args_param):
     if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
         assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported" 
 
-    agent = Agent(envs).to(device)
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
     obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
@@ -272,15 +279,30 @@ def train(args_param):
     dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
 
+    agent = Agent(envs).to(device)
+    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    if args.load_checkpoint:
+        assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
+        checkpoint = torch.load(args.load_checkpoint_path)
+        # Load the model state dictionary
+        agent.load_state_dict(checkpoint['model_state_dict'])
+        # Load the optimizer state dictionary
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        global_step = checkpoint['global_step']
+        start_step = global_step % args.num_steps_rollout
+        print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step}!")
+    
+    else:
+        global_step = 0
+        start_step = 0
     # TRY NOT TO MODIFY: start the game
-    global_step = 0
     start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
-    next_obs = torch.Tensor(next_obs).to(device)
+    next_obs = torch.Tensor(next_obs).to(device) 
     next_done = torch.zeros(args.num_envs).to(device)
 
     # Episode count 
-    term_eps_idx =0 # count episodes where designs were completed (terminated)
+    term_eps_idx = 0 # count episodes where designs were completed (terminated)
 
     # create h5py file
     if args.save_h5:
@@ -310,6 +332,16 @@ def train(args_param):
         # Rollout
         for step in range(0, args.num_steps_rollout): # total number of steps regardless of number of eps
             global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
+            # save checkpoint at intervals
+            if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
+                model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                torch.save({
+                                'model_state_dict': agent.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                'global_step': global_step,
+                            }, model_path)
+                print(f"Model saved at global_step {model_path}!")
+
             obs[step] = next_obs
             dones[step] = next_done
 
@@ -320,20 +352,11 @@ def train(args_param):
                 # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
                 with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
                     curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
-                    # valid_idx = np.where(curr_mask == 1)[0]
-                    # print(f'valid idx : {valid_idx}')
-                    # print(f'random curr mask actions : {[envs.action_converter.decode(x) for x in valid_idx]}')  # get decoded action values for value 1 in curr_mask
                     
                     action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
-                    # else:
-                    # next_obs = torch.Tensor(next_obs).to(device)
-                    
-                    # print(f'random action {args.rand_init_steps - rand_init_counter} \ {args.rand_init_steps} : {envs.action_converter.decode(action)}')  
-                    # envs.rand_init_actions += [action] # register random action int to envs.rand_init_actions for vis
                     envs.add_rand_action(action)
-                    # print(f'step {envs.global_steps} random init counter : {rand_init_counter} envs.rand_init_actions : {envs.rand_init_actions}')
                 rand_init_counter -= 1
 
             else: # ALGO LOGIC: action according to policy
@@ -371,7 +394,7 @@ def train(args_param):
                                     video_folder=args.render_dir,
                                     fps=envs.metadata["render_fps"],
                                     # video_length = ,
-                                    name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                    # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
                                     episode_index = term_eps_idx, # why need +1?
                                     # step_starting_index=step_starting_index,
                                     episode_trigger = video_save_trigger
@@ -480,8 +503,9 @@ def train(args_param):
         writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step) # indirect indicator of how long it takes to complete an episode
+        writer.add_scalar("charts/time", time.time() - start_time, global_step)
+        writer.add_scalar("charts/episode", term_eps_idx, global_step)
 
     envs.close()
     writer.close()
