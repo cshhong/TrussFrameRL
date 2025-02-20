@@ -187,6 +187,81 @@ class Agent(nn.Module):
 
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
     
+class Agent_CNN(nn.Module):
+    def __init__(self, envs, num_stacked_obs):
+        super().__init__()
+        # self.network = nn.Sequential(
+        #     layer_init(nn.Conv2d(4, 32, 8, stride=4)),
+        #     nn.ReLU(),
+        #     layer_init(nn.Conv2d(32, 64, 4, stride=2)),
+        #     nn.ReLU(),
+        #     layer_init(nn.Conv2d(64, 64, 3, stride=1)),
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     layer_init(nn.Linear(64 * 7 * 7, 512)),
+        #     nn.ReLU(),
+        # )
+        self.network = nn.Sequential(
+            layer_init(nn.Conv2d(num_stacked_obs, 32, 4, stride=2)), # stacked obs shape (stacked, 10, 6)
+            nn.ReLU(),
+            layer_init(nn.Conv2d(32, 32, 2, stride=1)),
+            nn.ReLU(),
+            nn.Flatten(),
+            layer_init(nn.Linear(32 * 3 * 1, 512)),
+            nn.ReLU(),
+        )
+        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+        self.critic = layer_init(nn.Linear(512, 1), std=1)
+
+    def get_value(self, x):
+        # return self.critic(self.network(x / 255.0))
+        # check if there is a batch layer, and if not, add one (batch size 1)
+        if len(x.shape) == 3:
+            x = x.unsqueeze(0)
+        return self.critic(self.network(x))
+
+    def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
+        # hidden = self.network(x / 255.0)
+        # logits = self.actor(hidden)
+        # probs = Categorical(logits=logits)
+        # if action is None:
+        #     action = probs.sample()
+        # return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+
+        # check if there is a batch layer, and if not, add one (batch size 1)
+        if len(x.shape) == 3:
+            x = x.unsqueeze(0)
+        hidden = self.network(x)
+        logits = self.actor(hidden)
+        probs = Categorical(logits=logits)
+        # Action selection 
+        if fixed_action == None:
+            # Epsilon greedy action selection
+            if np.random.rand() < epsilon_greedy:
+                if action_mask is not None:
+                    # print(f'    epsilon_greedy random action with action mask')
+                    valid_actions = np.where(action_mask == 1)[0]
+                    action = torch.tensor(np.random.choice(valid_actions))
+                else:
+                    # print(f'    action mask is None (epsilon_greedy random action)')
+                    action = torch.tensor(np.random.randint(len(probs.probs)))
+            else:
+                if action_mask is not None: # mask invalid actions to get next action
+                    # print(f'applying action mask : {action_mask}')
+                    masked_probs = probs.probs * action_mask
+                    norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
+                    # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
+                    action = Categorical(probs=norm_masked_probs).sample()
+                else: # sample action without mask
+                    print(f'action mask is None')
+                    action = probs.sample()
+        else:
+            action = fixed_action
+        
+        if not isinstance(action, torch.Tensor):
+            action = torch.tensor(action)
+        
+        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 def video_save_trigger(episode_index):
     '''
