@@ -8,7 +8,7 @@ import random
 import time
 from dataclasses import dataclass
 
-import gymnasium as gym
+import gymnasium as gym # version 0.28.1 
 import numpy as np
 import torch
 import torch.nn as nn
@@ -29,6 +29,7 @@ if torch.cuda.is_available():
 else:
     print("CUDA is not available. Using CPU.")
 
+from gymnasium.wrappers import FrameStack
 
 @dataclass
 class Args:
@@ -113,8 +114,13 @@ class Args:
     checkpoint_interval_steps: int = 0
     """interval in saving model (computed in runtime)""" 
 
+    # epsilon greedy action selection
     epsilon_greedy: float = 1e-3
 
+    # observation mode
+    obs_mode: str = 'frame_grid' # 'frame_grid_singleint'
+    
+    num_stacked_obs: int = 3 # for frame_grid obs mode
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -289,7 +295,7 @@ def train(args_param):
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     # args.num_iterations = args.total_timesteps // args.batch_size
     args.num_iterations = int(args.total_timesteps // args.batch_size)
-    args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
+    # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
 
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -325,21 +331,24 @@ def train(args_param):
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup
+    # env setup (parallel environment)
     # SyncVectorEnv is a wrapper to vectorize environments to run in parallel
     # envs = gym.vector.SyncVectorEnv(
     #     [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
     # )
-    # envs = gym.make("Cantilever-v0", render_mode=args.render_mode, render_dir=args.render_dir)
+    
+    # Use single environment
     envs = gym.make(
                     id=args.env_id,
-                    render_mode=args.render_mode,
+                    render_mode=args.render_mode, 
                     render_interval_eps=args.render_interval,
                     render_interval_consecutive=args.render_interval_count,
                     render_dir = args.render_dir,
                     max_episode_length = 400,
-                    obs_mode='frame_grid',
+                    obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,) # TODO 
+    
+    envs = FrameStack(envs, args.num_stacked_obs)
     
     print(f'env action space : {envs.action_space}')
     if isinstance(envs, gym.Env): # single env
@@ -349,15 +358,22 @@ def train(args_param):
 
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
-    obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
+    if args.obs_mode == 'frame_grid_singleint':
+        obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
+    elif args.obs_mode == 'frame_grid':
+        obs = torch.zeros((args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
 
-    agent = Agent(envs).to(device)
+    if envs.obs_mode == 'frame_grid_singleint':
+        agent = Agent(envs).to(device)
+    if envs.obs_mode == 'frame_grid':
+        agent = Agent_CNN(envs, num_stacked_obs=args.num_stacked_obs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    # If loading from checkpoint, load the model and optimizer state dictionaries
     if args.load_checkpoint:
         assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
         checkpoint = torch.load(args.load_checkpoint_path)
@@ -375,6 +391,7 @@ def train(args_param):
     # TRY NOT TO MODIFY: start the game
     start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
+    print(f'Stacked obs after reset : {envs.observation_space}')
     next_obs = torch.Tensor(next_obs).to(device) 
     next_done = torch.zeros(args.num_envs).to(device)
 
@@ -433,12 +450,16 @@ def train(args_param):
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
                     envs.add_rand_action(action)
+                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
+                    values[step] = value.flatten()
+                actions[step] = action
+                logprobs[step] = logprob
                 rand_init_counter -= 1
 
             else: # ALGO LOGIC: action according to policy
                 with torch.no_grad():
                     curr_mask = envs.get_action_mask()
-                    decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
+                    # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                     # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
                     if np.all(curr_mask == 0): # prevent nan in get_action_and_value
                         print(f'curr_mask is all zeros!')
@@ -510,7 +531,10 @@ def train(args_param):
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        if args.obs_mode == "frame_grid_singleint":
+            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        elif args.obs_mode == "frame_grid":
+            b_obs = obs.reshape((-1,) + (args.num_stacked_obs,) + envs.single_observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
         b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
         b_advantages = advantages.reshape(-1)
@@ -525,7 +549,6 @@ def train(args_param):
             for start in range(0, args.batch_size, args.minibatch_size):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
-
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
