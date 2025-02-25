@@ -167,9 +167,8 @@ class Agent(nn.Module):
         # TODO what are the probs of unused cells? how does it affect overall logit distribution and approxmiate kl divergence?
         '''
         logits = self.actor(x) # (action_space, )
-        probs = Categorical(logits=logits) # softmax
-        # print(f'action probs : {probs.probs}')
-        
+        org_probs = Categorical(logits=logits)
+
         # Action selection 
         if fixed_action == None:
             # Epsilon greedy action selection
@@ -183,18 +182,45 @@ class Agent(nn.Module):
                     action = torch.tensor(np.random.randint(len(probs.probs)))
             else:
                 if action_mask is not None: # mask invalid actions to get next action
+                    masked_logits = logits.clone()  # Clone logits to avoid modifying the original tensor
+                    # Ensure action_mask has the correct shape
+                    if len(action_mask.shape) == 1:
+                        action_mask = torch.tensor(action_mask).unsqueeze(0)  # Add batch dimension to action_mask if needed
+                    masked_logits[action_mask == 0] = -float('inf')  # Set logits of undesirable actions to -inf
+                    masked_probs = Categorical(logits=masked_logits) # masked probs
+
+                    try: # DEBUG nan in probs
+                        action = masked_probs.sample()
+                    except ValueError as e:
+                        print(f'Error in Categorical : {e}')
+                        print(f'input obs :\n {x}')
+                        print(f'logits : \n{logits}')
+                        print(f'action mask : \n{action_mask}')
+                        print(f'masked logits : \n{masked_logits}')
+                        print(f'org probs : \n{org_probs.probs}')
+                        print(f'masked probs : \n{masked_probs.probs}')
+
                     # print(f'applying action mask : {action_mask}')
-                    masked_probs = probs.probs * action_mask
-                    norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
-                    # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
-                    action = Categorical(probs=norm_masked_probs).sample()
+                    # masked_probs = probs.probs * action_mask
+                    # norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
+                    # # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
+                    # action = Categorical(probs=norm_masked_probs).sample()
+
+                    # Categorical with masked probs causes nan -> use masked logits instead
+                    # masked_logits = logits * action_mask
+                    # norm_masked_logits = masked_logits - masked_logits.logsumexp(dim=-1, keepdim=True)
+                    # action = Categorical(logits=norm_masked_logits).sample()
+                    
                 else: # sample action without mask
-                    print(f'action mask is None')
-                    action = probs.sample()
+                    print(f'action mask is None, taking action according to policy') 
+                    action = org_probs.sample()
         else:
             action = fixed_action
 
-        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+        if not isinstance(action, torch.Tensor):
+            action = torch.tensor(action)
+
+        return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(x)
     
 class Agent_CNN(nn.Module):
     def __init__(self, envs, num_stacked_obs):
@@ -242,7 +268,8 @@ class Agent_CNN(nn.Module):
             x = x.unsqueeze(0)
         hidden = self.network(x)
         logits = self.actor(hidden)
-        probs = Categorical(logits=logits)
+        org_probs = Categorical(logits=logits)
+
         # Action selection 
         if fixed_action == None:
             # Epsilon greedy action selection
@@ -251,26 +278,46 @@ class Agent_CNN(nn.Module):
                     # print(f'    epsilon_greedy random action with action mask')
                     valid_actions = np.where(action_mask == 1)[0]
                     action = torch.tensor(np.random.choice(valid_actions))
-                else:
-                    # print(f'    action mask is None (epsilon_greedy random action)')
-                    action = torch.tensor(np.random.randint(len(probs.probs)))
+                else: # TODO when is action mask None?
+                    print(f'    action mask is None (epsilon_greedy random action)')
+                    action = torch.tensor(np.random.randint(len(org_probs.probs)))
             else:
                 if action_mask is not None: # mask invalid actions to get next action
+                    # Assuming logits and action_mask are tensors
+                    masked_logits = logits.clone()  # Clone logits to avoid modifying the original tensor
+                    # Ensure action_mask has the correct shape
+                    if len(action_mask.shape) == 1:
+                        action_mask = torch.tensor(action_mask).unsqueeze(0)  # Add batch dimension to action_mask if needed
+                    masked_logits[action_mask == 0] = -float('inf')  # Set logits of undesirable actions to -inf
+                    masked_probs = Categorical(logits=masked_logits) # masked probs
+
                     # print(f'applying action mask : {action_mask}')
-                    masked_probs = probs.probs * action_mask
-                    norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
+                    # masked_probs = probs.probs * action_mask # 
+                    # norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
                     # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
-                    action = Categorical(probs=norm_masked_probs).sample()
-                else: # sample action without mask
-                    print(f'action mask is None')
-                    action = probs.sample()
+                    
+                    try: # DEBUG nan in probs
+                        action = masked_probs.sample()
+                    except ValueError as e:
+                        print(f'Error in Categorical : {e}')
+                        print(f'input obs :\n {x}')
+                        print(f'hidden : \n{hidden}')
+                        print(f'logits : \n{logits}')
+                        print(f'action mask : \n{action_mask}')
+                        print(f'masked logits : \n{masked_logits}')
+                        print(f'org probs : \n{org_probs.probs}')
+                        print(f'masked probs : \n{masked_probs.probs}')
+
+                else: # sample action without mask 
+                    print(f'action mask is None, taking action according to policy') 
+                    action = org_probs.sample()
         else:
             action = fixed_action
         
         if not isinstance(action, torch.Tensor):
             action = torch.tensor(action)
         
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+        return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(hidden)
 
 def video_save_trigger(episode_index):
     '''
@@ -305,7 +352,6 @@ def run(args_param):
 
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    name = args.exp_name
     # run_name = f"{args.env_id}_seed{args.seed}_{current_time}_{name}"
     run_name = f"{args.train_mode}_{args.exp_name}"
 
@@ -318,8 +364,9 @@ def run(args_param):
             sync_tensorboard=True, # automatric syncing of W&B logs from TensorBoard(writer)
             config=vars(args),
             name=run_name,
-            monitor_gym=True,
+            # monitor_gym=True,
             save_code=True, # saves the code used for the run to WandB servers at start
+            resume="allow"
         )
     
     # Save data in event file that can be opened with TensorBoard
@@ -490,22 +537,6 @@ def run(args_param):
                         logprobs[step] = logprob
                     elif args.train_mode == 'inference':
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
-                    # try:
-                    #     if args.train_mode == 'train':
-                    #         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
-                    #         values[step] = value.flatten()
-                    #         actions[step] = action
-                    #         logprobs[step] = logprob
-                    #     elif args.train_mode == 'inference':
-                    #         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
-                    # except ValueError as e:
-                    #     print(f'ValueError occurred: {e}')
-                    #     print(f'current action mask: {curr_mask}')
-                    #     print(f'current obs: {next_obs}')
-                    #     # Handle the ValueError
-                    #     envs.reset(seed=args.seed)
-                    #     rand_init_counter = args.rand_init_steps # reset random initialization counter
-                    #     continue
                 # print(f'action : {action} | {envs.action_converter.decode(action)}') # DEBUG decode reverts action to 0,0,0,0?!
             
             # TRY NOT TO MODIFY: execute the game and log data.
