@@ -105,6 +105,9 @@ class Args:
     num_iterations: int = 0 # rounds of training the policy
     """the number of iterations (computed in runtime)""" 
 
+    # train mode
+    train_mode = "train" # "train" or "inference"
+
     # load model to resume training / inference
     load_checkpoint: bool = False
     load_checkpoint_path: str = None
@@ -119,7 +122,7 @@ class Args:
 
     # observation mode
     obs_mode: str = 'frame_grid' # 'frame_grid_singleint'
-    
+
     num_stacked_obs: int = 3 # for frame_grid obs mode
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -282,26 +285,29 @@ def video_save_trigger(episode_index):
     # return True
 
 
-def train(args_param):
+def run(args_param):
     '''
     Train the agent using PPO algorithm
     args : Args object containing hyperparameters
     '''
     global args # to use same args in video_save_trigger
     args = args_param
+    print(f'Training Mode : {args.train_mode}')
 
-    # args = tyro.cli(Args)
-    args.batch_size = int(args.num_envs * args.num_steps_rollout)
-    args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    # args.num_iterations = args.total_timesteps // args.batch_size
-    args.num_iterations = int(args.total_timesteps // args.batch_size)
-    # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
+    if args.train_mode == 'train':
+        # args = tyro.cli(Args)
+        args.batch_size = int(args.num_envs * args.num_steps_rollout)
+        args.minibatch_size = int(args.batch_size // args.num_minibatches)
+        args.num_iterations = int(args.total_timesteps // args.batch_size)
+        # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
+    elif args.train_mode == 'inference':
+        args.num_iterations = 1
 
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     name = args.exp_name
     # run_name = f"{args.env_id}_seed{args.seed}_{current_time}_{name}"
-    run_name = f"{args.env_id}_{name}"
+    run_name = f"{args.train_mode}_{args.exp_name}"
 
     if args.track_wb:
         import wandb
@@ -348,9 +354,11 @@ def train(args_param):
                     obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,) # TODO 
     
+    envs.print_framegrid() # DEBUG target 
+    
     envs = FrameStack(envs, args.num_stacked_obs)
     
-    print(f'env action space : {envs.action_space}')
+    print(f'Action Space : {envs.action_space}')
     if isinstance(envs, gym.Env): # single env
         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
     if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
@@ -358,15 +366,16 @@ def train(args_param):
 
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
-    if args.obs_mode == 'frame_grid_singleint':
-        obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
-    elif args.obs_mode == 'frame_grid':
-        obs = torch.zeros((args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
-    logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    if args.train_mode == 'train':
+        if args.obs_mode == 'frame_grid_singleint':
+            obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
+        elif args.obs_mode == 'frame_grid':
+            obs = torch.zeros((args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape).to(device)
+        actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
+        logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+        values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-    values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
 
     if envs.obs_mode == 'frame_grid_singleint':
         agent = Agent(envs).to(device)
@@ -374,25 +383,30 @@ def train(args_param):
         agent = Agent_CNN(envs, num_stacked_obs=args.num_stacked_obs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     # If loading from checkpoint, load the model and optimizer state dictionaries
+    if args.train_mode == 'inference':
+        assert args.load_checkpoint, "args.load_checkpoint should be True for inference"
+        global_step = 0
+        start_step = 0
     if args.load_checkpoint:
         assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
         checkpoint = torch.load(args.load_checkpoint_path)
         # Load the model state dictionary
         agent.load_state_dict(checkpoint['model_state_dict'])
         # Load the optimizer state dictionary
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        global_step = checkpoint['global_step']
-        start_step = global_step % args.num_steps_rollout
+        if args.train_mode == 'train':
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            global_step = checkpoint['global_step']
+            start_step = global_step % args.num_steps_rollout
         print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step}!")
-    
     else:
         global_step = 0
         start_step = 0
+    
     # TRY NOT TO MODIFY: start the game
     start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
-    print(f'Stacked obs after reset : {envs.observation_space}')
-    next_obs = torch.Tensor(next_obs).to(device) 
+    # print(f'Stacked obs after reset : {envs.observation_space}')
+    next_obs = torch.Tensor(np.array(next_obs)).to(device) 
     next_done = torch.zeros(args.num_envs).to(device)
 
     # Episode count 
@@ -412,30 +426,31 @@ def train(args_param):
     # for iteration in range(1, args.num_iterations + 1):
     for iteration in tqdm(range(1, args.num_iterations + 1), desc="Iterations"):
         # Annealing the rate if instructed to do so.
-        if args.anneal_lr:
+        if args.train_mode == 'train' and args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
         # Set random initialization 
-        if args.rand_init_steps > 0:
-            envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
+        # if args.rand_init_steps > 0:
+        #     envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
         # print(f'envs.n_rand_init_steps : {envs.n_rand_init_steps}')
 
         # Rollout
         for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
-            global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
-            # save checkpoint at intervals
-            if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
-                model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
-                torch.save({
-                                'model_state_dict': agent.state_dict(),
-                                'optimizer_state_dict': optimizer.state_dict(),
-                                'global_step': global_step,
-                            }, model_path)
-                print(f"Model saved at global_step {model_path}!")
+            global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape)
+            if args.train_mode == 'train':
+                # save checkpoint at intervals
+                if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
+                    model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                    torch.save({
+                                    'model_state_dict': agent.state_dict(),
+                                    'optimizer_state_dict': optimizer.state_dict(),
+                                    'global_step': global_step,
+                                }, model_path)
+                    print(f"Model saved at global_step {model_path}!")
 
-            obs[step] = next_obs
+                obs[step] = next_obs
             dones[step] = next_done
 
             if envs.reset_env_bool == True: # initialize random actions at reset of env
@@ -444,16 +459,18 @@ def train(args_param):
             if rand_init_counter > 0: # sample random action at initialization of episode
                 # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
                 with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
-                    curr_mask = envs.get_action_mask() #  np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible actions.
-                    
+                    curr_mask = envs.get_action_mask() 
                     action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
                     envs.add_rand_action(action)
-                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
-                    values[step] = value.flatten()
-                actions[step] = action
-                logprobs[step] = logprob
+                    if args.train_mode == 'train':
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
+                        values[step] = value.flatten()
+                        actions[step] = action
+                        logprobs[step] = logprob
+                    elif args.train_mode == 'inference':
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=0) # get logprob and value for random action
                 rand_init_counter -= 1
 
             else: # ALGO LOGIC: action according to policy
@@ -461,18 +478,35 @@ def train(args_param):
                     curr_mask = envs.get_action_mask()
                     # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
                     # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                    if np.all(curr_mask == 0): # prevent nan in get_action_and_value
+                    if np.all(curr_mask == 0): # prevent nan in get_action_and_value TODO this is not the problem!
                         print(f'curr_mask is all zeros!')
                         envs.reset(seed=args.seed)
                         rand_init_counter = args.rand_init_steps # reset random initialization counter
                         continue
-                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
-                    values[step] = value.flatten()
-                actions[step] = action
-                logprobs[step] = logprob
-
+                    if args.train_mode == 'train':
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                        values[step] = value.flatten()
+                        actions[step] = action
+                        logprobs[step] = logprob
+                    elif args.train_mode == 'inference':
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                    # try:
+                    #     if args.train_mode == 'train':
+                    #         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                    #         values[step] = value.flatten()
+                    #         actions[step] = action
+                    #         logprobs[step] = logprob
+                    #     elif args.train_mode == 'inference':
+                    #         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                    # except ValueError as e:
+                    #     print(f'ValueError occurred: {e}')
+                    #     print(f'current action mask: {curr_mask}')
+                    #     print(f'current obs: {next_obs}')
+                    #     # Handle the ValueError
+                    #     envs.reset(seed=args.seed)
+                    #     rand_init_counter = args.rand_init_steps # reset random initialization counter
+                    #     continue
                 # print(f'action : {action} | {envs.action_converter.decode(action)}') # DEBUG decode reverts action to 0,0,0,0?!
-                # print(f'action : {action} ')
             
             # TRY NOT TO MODIFY: execute the game and log data.
             # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -513,253 +547,103 @@ def train(args_param):
 
 
             
+        if args.train_mode == 'train':
+            # bootstrap value if not done
+            with torch.no_grad():
+                next_value = agent.get_value(next_obs).reshape(1, -1)
+                advantages = torch.zeros_like(rewards).to(device)
+                lastgaelam = 0
+                for t in reversed(range(args.num_steps_rollout)):
+                    if t == args.num_steps_rollout - 1:
+                        nextnonterminal = 1.0 - next_done
+                        nextvalues = next_value
+                    else:
+                        nextnonterminal = 1.0 - dones[t + 1]
+                        nextvalues = values[t + 1]
+                    delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
+                    advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+                returns = advantages + values
 
-        # bootstrap value if not done
-        with torch.no_grad():
-            next_value = agent.get_value(next_obs).reshape(1, -1)
-            advantages = torch.zeros_like(rewards).to(device)
-            lastgaelam = 0
-            for t in reversed(range(args.num_steps_rollout)):
-                if t == args.num_steps_rollout - 1:
-                    nextnonterminal = 1.0 - next_done
-                    nextvalues = next_value
-                else:
-                    nextnonterminal = 1.0 - dones[t + 1]
-                    nextvalues = values[t + 1]
-                delta = rewards[t] + args.gamma * nextvalues * nextnonterminal - values[t]
-                advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
-            returns = advantages + values
+            # flatten the batch
+            if args.obs_mode == "frame_grid_singleint":
+                b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+            elif args.obs_mode == "frame_grid":
+                b_obs = obs.reshape((-1,) + (args.num_stacked_obs,) + envs.single_observation_space.shape)
+            b_logprobs = logprobs.reshape(-1)
+            b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+            b_advantages = advantages.reshape(-1)
+            b_returns = returns.reshape(-1)
+            b_values = values.reshape(-1)
 
-        # flatten the batch
-        if args.obs_mode == "frame_grid_singleint":
-            b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-        elif args.obs_mode == "frame_grid":
-            b_obs = obs.reshape((-1,) + (args.num_stacked_obs,) + envs.single_observation_space.shape)
-        b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
-        b_advantages = advantages.reshape(-1)
-        b_returns = returns.reshape(-1)
-        b_values = values.reshape(-1)
+            # Optimizing the policy and value network
+            b_inds = np.arange(args.batch_size)
+            clipfracs = []
+            for epoch in range(args.update_epochs):
+                np.random.shuffle(b_inds)
+                for start in range(0, args.batch_size, args.minibatch_size):
+                    end = start + args.minibatch_size
+                    mb_inds = b_inds[start:end]
+                    _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
+                    logratio = newlogprob - b_logprobs[mb_inds]
+                    ratio = logratio.exp()
 
-        # Optimizing the policy and value network
-        b_inds = np.arange(args.batch_size)
-        clipfracs = []
-        for epoch in range(args.update_epochs):
-            np.random.shuffle(b_inds)
-            for start in range(0, args.batch_size, args.minibatch_size):
-                end = start + args.minibatch_size
-                mb_inds = b_inds[start:end]
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
-                logratio = newlogprob - b_logprobs[mb_inds]
-                ratio = logratio.exp()
+                    with torch.no_grad():
+                        # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                        old_approx_kl = (-logratio).mean()
+                        approx_kl = ((ratio - 1) - logratio).mean()
+                        clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
 
-                with torch.no_grad():
-                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                    old_approx_kl = (-logratio).mean()
-                    approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > args.clip_coef).float().mean().item()]
+                    mb_advantages = b_advantages[mb_inds]
+                    if args.norm_adv:
+                        mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
-                mb_advantages = b_advantages[mb_inds]
-                if args.norm_adv:
-                    mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                    # Policy loss
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                # Policy loss
-                pg_loss1 = -mb_advantages * ratio
-                pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    # Value loss
+                    newvalue = newvalue.view(-1)
+                    if args.clip_vloss:
+                        v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+                        v_clipped = b_values[mb_inds] + torch.clamp(
+                            newvalue - b_values[mb_inds],
+                            -args.clip_coef,
+                            args.clip_coef,
+                        )
+                        v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
+                    else:
+                        v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
-                # Value loss
-                newvalue = newvalue.view(-1)
-                if args.clip_vloss:
-                    v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                    v_clipped = b_values[mb_inds] + torch.clamp(
-                        newvalue - b_values[mb_inds],
-                        -args.clip_coef,
-                        args.clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
-                else:
-                    v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
+                    entropy_loss = entropy.mean()
+                    loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
-                entropy_loss = entropy.mean()
-                loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                    optimizer.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
-                optimizer.step()
+                if args.target_kl is not None and approx_kl > args.target_kl:
+                    break
 
-            if args.target_kl is not None and approx_kl > args.target_kl:
-                break
+            y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
+            var_y = np.var(y_true)
+            explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-        y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-        var_y = np.var(y_true)
-        explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-
-        # TRY NOT TO MODIFY: record rewards for plotting purposes
-        writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
-        writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-        writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-        writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-        writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
-        writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-        writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-        writer.add_scalar("losses/explained_variance", explained_var, global_step)
-        writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step) # indirect indicator of how long it takes to complete an episode
-        writer.add_scalar("charts/time", time.time() - start_time, global_step)
-        writer.add_scalar("charts/episode", term_eps_idx, global_step)
+            # TRY NOT TO MODIFY: record rewards for plotting purposes
+            writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+            writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+            writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+            writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+            writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
+            writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
+            writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+            writer.add_scalar("losses/explained_variance", explained_var, global_step)
+            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step) # indirect indicator of how long it takes to complete an episode
+            writer.add_scalar("charts/time", time.time() - start_time, global_step)
+            writer.add_scalar("charts/episode", term_eps_idx, global_step)
 
     envs.close()
     writer.close()
-
-#TODO fix to match train (CNN)
-# def run_inference(args_param):
-#     '''
-#     Run rollouts using trained policy
-#     '''
-#     global args # to use same args in video_save_trigger
-#     args = args_param
-
-#     name = args.exp_name
-#     run_name = f"inference_{args.env_id}_{name}"
-
-#     if args.track_wb:
-#         import wandb
-
-#         wandb.init(
-#             project=args.wandb_project_name,
-#             entity=args.wandb_entity,
-#             sync_tensorboard=True, # automatric syncing of W&B logs from TensorBoard(writer)
-#             config=vars(args),
-#             name=run_name,
-#             monitor_gym=True,
-#             save_code=True, # saves the code used for the run to WandB servers at start
-#         )
-
-#     writer = SummaryWriter(f"runs/{run_name}")
-#     writer.add_text(
-#         "hyperparameters",
-#         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
-#     )
-
-#     # TRY NOT TO MODIFY: seeding
-#     random.seed(args.seed)
-#     np.random.seed(args.seed)
-#     torch.manual_seed(args.seed)
-#     torch.backends.cudnn.deterministic = args.torch_deterministic
-
-#     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-
-#     envs = gym.make(
-#                     id=args.env_id,
-#                     render_mode=args.render_mode,
-#                     render_interval_eps=args.render_interval,
-#                     render_interval_consecutive=args.render_interval_count,
-#                     render_dir = args.render_dir,
-#                     max_episode_length = 400,
-#                     # obs_mode='frame_grid_singleint',
-#                     obs_mode='frame_grid',
-#                     rand_init_seed = args.rand_init_seed,) 
-
-#     print(f'env action space : {envs.action_space}')
-#     if isinstance(envs, gym.Env): # single env
-#         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
-#     if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
-#         assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported" 
-
-#     # TODO load from trained model
-#     agent = Agent(envs).to(device)
-#     assert args.load_checkpoint, "args.load_checkpoint should be True for inference"
-#     assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
-#     checkpoint = torch.load(args.load_checkpoint_path)
-#     # Load the model state dictionary
-#     agent.load_state_dict(checkpoint['model_state_dict'])
-#     # Load the optimizer state dictionary
-#     print(f"Model loaded from checkpoint {args.load_checkpoint_path}!")
-
-#     # LOGs
-#     rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-    
-#     # TRY NOT TO MODIFY: start the game
-#     global_step = 0
-#     start_time = time.time()
-#     next_obs, _ = envs.reset(seed=args.seed)
-#     next_obs = torch.Tensor(next_obs).to(device)
-#     next_done = torch.zeros(args.num_envs).to(device)
-
-#     # Episode count 
-#     term_eps_idx =0 # count episodes where designs were completed (terminated)
-
-#     # create h5py file
-#     if args.save_h5:
-#         # Open the HDF5 file at the beginning of rollout
-#         h5dir = 'train_h5'
-#         save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
-#         h5f = h5py.File(save_hdf5_filename, 'a', track_order=True)  # Use 'w' to overwrite or 'a' to append
-
-#         with h5py.File(save_hdf5_filename, 'a', track_order=True) as f:
-#             save_env_render_properties(f, envs)
-
-#     # Set random initialization 
-#     assert args.rand_init_steps < envs.cantilever_length_f, f"rand_init_steps {args.rand_init_steps} should be shorter than direct cantilever length {envs.cantilever_length_f}" #make sure that the rand_init_step is shorter than cantilever length
-#     if args.rand_init_steps > 0:
-#         envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
-
-#      # Rollout
-#     for step in range(0, args.num_steps_rollout): # total number of steps regardless of number of eps
-#         global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape) 
-
-#         if envs.reset_env_bool == True: # initialize random actions at reset of env
-#             rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
-#         if rand_init_counter > 0: # sample random action at initialization of episode
-#             with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
-#                 curr_mask = envs.get_action_mask() 
-#                 action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
-#                 if isinstance(action, torch.Tensor):
-#                     action = action.cpu().numpy()
-#                 envs.add_rand_action(action)
-#             rand_init_counter -= 1
-
-#         else: # ALGO LOGIC: action according to policy
-#             with torch.no_grad():
-#                 curr_mask = envs.get_action_mask()
-#                 # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
-#                 # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-#                 action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
-        
-#         next_obs, reward, terminations, truncations, info = envs.step(action)
-#         next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
-#         rewards[step] = torch.tensor(reward).to(device).view(-1)
-#         next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
-
-#         if terminations == True or truncations == True:
-#             writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
-#             writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
-            
-#             if terminations == True: # complete design
-#                 if envs.render_mode == "rgb_list":
-#                     assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
-#                     save_video(
-#                                 frames=envs.get_render_list(),
-#                                 video_folder=args.render_dir,
-#                                 fps=envs.metadata["render_fps"],
-#                                 # video_length = ,
-#                                 name_prefix = f"infer", # (f"{path_prefix}-episode-{episode_index}.mp4")
-#                                 episode_index = term_eps_idx, # why need +1?
-#                                 # step_starting_index=step_starting_index,
-#                                 episode_trigger = video_save_trigger
-#                     )
-#                 term_eps_idx += 1 # count episodes where designs were completed (terminated)
-#                 if args.save_h5:
-#                     # Save data to hdf5 file
-#                     save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
-#                     # Flush (save) data to disk (optional - may slow down training)
-#                     h5f.flush()
-
-#             envs.reset(seed=args.seed)
-#             rand_init_counter = args.rand_init_steps # reset random initialization counter
-
-#     envs.close()
-#     writer.close()
