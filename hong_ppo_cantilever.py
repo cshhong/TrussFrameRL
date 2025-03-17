@@ -474,8 +474,7 @@ def run(args_param):
             save_env_render_properties(f, envs)
 
     # Start iterations
-    # for iteration in range(1, args.num_iterations + 1):
-    for iteration in tqdm(range(1, args.num_iterations + 1), desc="Iterations"):
+    for iteration in tqdm(range(start_iteration, args.num_iterations + 1), desc="Iterations"):
         # Annealing the rate if instructed to do so.
         if args.train_mode == 'train' and args.anneal_lr:
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -483,6 +482,12 @@ def run(args_param):
             optimizer.param_groups[0]["lr"] = lrnow
 
         # Rollout
+        # set start step for loading checkpoint
+        if args.load_checkpoint and iteration == start_iteration and args.train_mode == 'train':
+            start_step = global_step % args.num_steps_rollout
+        else:
+            start_step = 0
+
         for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
             global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape)
             if args.train_mode == 'train':
