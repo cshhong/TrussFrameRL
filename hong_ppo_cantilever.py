@@ -125,7 +125,7 @@ class Args:
 
     num_stacked_obs: int = 3 # for frame_grid obs mode
 
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
