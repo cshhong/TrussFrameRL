@@ -689,5 +689,21 @@ def run(args_param):
             writer.add_scalar("charts/time", time.time() - start_time, global_step)
             writer.add_scalar("charts/episode", term_eps_idx, global_step)
 
+            writer.add_scalar("logprobs/b_logprobs_max", b_logprobs.max(), global_step)
+            writer.add_scalar("logprobs/b_logprobs_min", b_logprobs.min(), global_step)
+            writer.add_scalar("logprobs/b_logprobs_std", b_logprobs.std(), global_step)
+            writer.add_scalar("logprobs/b_logprobs_mean", b_logprobs.mean(), global_step)
+
+            writer.add_scalar("values/b_values_max", b_values.max(), global_step)
+            writer.add_scalar("values/b_values_min", b_values.min(), global_step)
+            writer.add_scalar("values/b_values_std",b_values.std(), global_step)
+            writer.add_scalar("values/b_values_mean", b_values.mean(), global_step)
+
+
+            for name, param in agent.named_parameters():
+                if param.requires_grad:
+                    writer.add_scalar(f"weights/{name}_mean", param.data.mean().item(), global_step)
+                    writer.add_scalar(f"weights/{name}_std", param.data.std().item(), global_step)
+
     envs.close()
     writer.close()
