@@ -595,8 +595,9 @@ def run(args_param):
                 rand_init_counter = args.rand_init_steps # reset random initialization counter
 
 
-            
-        if args.train_mode == 'train':
+        # Train policy (actor, critic)
+        if args.train_mode == 'train' and iteration != start_iteration:
+
             # bootstrap value if not done
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
