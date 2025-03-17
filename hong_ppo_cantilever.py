@@ -525,26 +525,32 @@ def run(args_param):
                     envs.add_rand_action(action)
                     if args.train_mode == 'train':
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
-                        values[step] = value.flatten()
-                        actions[step] = action
-                        logprobs[step] = logprob
-                    elif args.train_mode == 'inference':
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=0) # get logprob and value for random action
+                    except ValueError as e:
+                        print(f'Error in rollout random get_action_and_value : \n{e}')
+                        print(f'input obs :\n {next_obs}')
+                        print(f'random action : {action}')
+                        print(f'action mask : {curr_mask}')
+                        print(f'logits : {agent.actor((agent.network(next_obs)))}')
+                        continue 
+                    actions[step] = action
+                    logprobs[step] = logprob # log only if not nan
+                    values[step] = value.flatten()
+
                 rand_init_counter -= 1
 
             else: # ALGO LOGIC: action according to policy
                 with torch.no_grad():
                     curr_mask = envs.get_action_mask()
-                    # decoded_curr_mask = [envs.action_converter.decode(idx) for idx in np.where(curr_mask == 1)[0]]
-                    # print(f'curr mask actions : {decoded_curr_mask}')  # get decoded action values for value 1 in curr_mask
-                    if np.all(curr_mask == 0): # prevent nan in get_action_and_value TODO this is not the problem!
-                        print(f'curr_mask is all zeros!')
-                        envs.reset(seed=args.seed)
-                        rand_init_counter = args.rand_init_steps # reset random initialization counter
-                        continue
-                    if args.train_mode == 'train':
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
-                        values[step] = value.flatten()
+                    if args.train_mode == 'train': # get action with epsilon greedy
+                        try:
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                        except ValueError as e:
+                            print(f'Error in rollout policy get_action_and_value : {e}')
+                            print(f'input obs :\n {next_obs}')
+                            print(f'action mask : {curr_mask}')
+                            print(f' agent network output : {agent.network(next_obs).shape}')
+                            # print(f'logits : {agent.actor((torch.flatten(agent.network(next_obs))))}')
+                            continue
                         actions[step] = action
                         logprobs[step] = logprob
                     elif args.train_mode == 'inference':
@@ -626,7 +632,15 @@ def run(args_param):
                 for start in range(0, args.batch_size, args.minibatch_size):
                     end = start + args.minibatch_size
                     mb_inds = b_inds[start:end]
-                    _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
+                    try: 
+                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
+                    except ValueError as e:
+                        print(f'Error in train get_action_and_value : {e}')
+                        print(f'input obs :\n {b_obs[mb_inds]}')
+                        print(f'actions : \n{b_actions[mb_inds]}')
+                        print(f'logprobs : \n{b_logprobs[mb_inds]}')
+                        print(f'inds : \n{mb_inds}')
+                        continue
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
