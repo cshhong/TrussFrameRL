@@ -191,7 +191,7 @@ class Agent(nn.Module):
                     action = torch.tensor(np.random.choice(valid_actions))
                 else:
                     # print(f'    action mask is None (epsilon_greedy random action)')
-                    action = torch.tensor(np.random.randint(len(probs.probs)))
+                    action = torch.tensor(np.random.randint(len(org_probs.probs)))
             else:
                 if action_mask is not None: # mask invalid actions to get next action
                     masked_logits = logits.clone()  # Clone logits to avoid modifying the original tensor
@@ -201,27 +201,7 @@ class Agent(nn.Module):
                     masked_logits[action_mask == 0] = -float('inf')  # Set logits of undesirable actions to -inf
                     masked_probs = Categorical(logits=masked_logits) # masked probs
 
-                    try: # DEBUG nan in probs
-                        action = masked_probs.sample()
-                    except ValueError as e:
-                        print(f'Error in Categorical : {e}')
-                        print(f'input obs :\n {x}')
-                        print(f'logits : \n{logits}')
-                        print(f'action mask : \n{action_mask}')
-                        print(f'masked logits : \n{masked_logits}')
-                        print(f'org probs : \n{org_probs.probs}')
-                        print(f'masked probs : \n{masked_probs.probs}')
-
-                    # print(f'applying action mask : {action_mask}')
-                    # masked_probs = probs.probs * action_mask
-                    # norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
-                    # # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
-                    # action = Categorical(probs=norm_masked_probs).sample()
-
-                    # Categorical with masked probs causes nan -> use masked logits instead
-                    # masked_logits = logits * action_mask
-                    # norm_masked_logits = masked_logits - masked_logits.logsumexp(dim=-1, keepdim=True)
-                    # action = Categorical(logits=norm_masked_logits).sample()
+                    action = masked_probs.sample()
                     
                 else: # sample action without mask
                     print(f'action mask is None, taking action according to policy') 
@@ -234,20 +214,40 @@ class Agent(nn.Module):
 
         return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(x)
     
+
+
+def normalize_frame_grid(frame_grid):
+    """
+    Standardizes a frame grid so that the mean is 0 and the standard deviation is 1.
+    
+    - load frame (-1) → replaced with 6
+    - Standardization: (X - mean) / std
+    
+    Args:
+        frame_grid (np.ndarray): The input grid with values in the range [-1, 5].
+
+    Returns:
+        torch.Tensor: The standardized grid with mean 0 and std 1.
+    """
+    # Replace -1 (load frame) with 6
+    frame_grid = np.where(frame_grid == -1, 6, frame_grid)
+
+    # Convert to tensor
+    frame_grid = torch.tensor(frame_grid, dtype=torch.float32)
+
+    # Compute mean and std
+    mean = frame_grid.mean()
+    std = frame_grid.std()
+
+    # Apply standardization
+    standardized_grid = (frame_grid - mean) / (std + 1e-8)  # Small epsilon to avoid division by zero
+
+    return standardized_grid
+
 class Agent_CNN(nn.Module):
     def __init__(self, envs, num_stacked_obs):
         super().__init__()
-        # self.network = nn.Sequential(
-        #     layer_init(nn.Conv2d(4, 32, 8, stride=4)),
-        #     nn.ReLU(),
-        #     layer_init(nn.Conv2d(32, 64, 4, stride=2)),
-        #     nn.ReLU(),
-        #     layer_init(nn.Conv2d(64, 64, 3, stride=1)),
-        #     nn.ReLU(),
-        #     nn.Flatten(),
-        #     layer_init(nn.Linear(64 * 7 * 7, 512)),
-        #     nn.ReLU(),
-        # )
+        # Network 2 bigger network
         self.network = nn.Sequential(
             layer_init(nn.Conv2d(num_stacked_obs, 32, 4, stride=2)), # stacked obs shape (stacked, 10, 6)
             nn.ReLU(),
@@ -257,29 +257,27 @@ class Agent_CNN(nn.Module):
             layer_init(nn.Linear(32 * 3 * 1, 512)),
             nn.ReLU(),
         )
+
         self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
-
+    
     def get_value(self, x):
-        # return self.critic(self.network(x / 255.0))
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
         return self.critic(self.network(x))
 
     def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
-        # hidden = self.network(x / 255.0)
-        # logits = self.actor(hidden)
-        # probs = Categorical(logits=logits)
-        # if action is None:
-        #     action = probs.sample()
-        # return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
-        hidden = self.network(x)
-        logits = self.actor(hidden)
+        normalized_x = normalize_frame_grid(x)
+        hidden = self.network(normalized_x)
+        # print(f'get hidden : {hidden}')
+        # print(f'get action hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
+        logits = self.actor(hidden) # these become too large and small causing nan!
+        # print(f'logits from actor : \n{logits}')
         org_probs = Categorical(logits=logits)
 
         # Action selection 
@@ -290,7 +288,7 @@ class Agent_CNN(nn.Module):
                     # print(f'    epsilon_greedy random action with action mask')
                     valid_actions = np.where(action_mask == 1)[0]
                     action = torch.tensor(np.random.choice(valid_actions))
-                else: # TODO when is action mask None?
+                else: 
                     print(f'    action mask is None (epsilon_greedy random action)')
                     action = torch.tensor(np.random.randint(len(org_probs.probs)))
             else:
@@ -302,23 +300,8 @@ class Agent_CNN(nn.Module):
                         action_mask = torch.tensor(action_mask).unsqueeze(0)  # Add batch dimension to action_mask if needed
                     masked_logits[action_mask == 0] = -float('inf')  # Set logits of undesirable actions to -inf
                     masked_probs = Categorical(logits=masked_logits) # masked probs
-
-                    # print(f'applying action mask : {action_mask}')
-                    # masked_probs = probs.probs * action_mask # 
-                    # norm_masked_probs = masked_probs / masked_probs.sum()  # Normalize to ensure it's a valid probability distribution
-                    # print(f'    normalized masked action probs : \n{norm_masked_probs}') # TODO debug nan
                     
-                    try: # DEBUG nan in probs
-                        action = masked_probs.sample()
-                    except ValueError as e:
-                        print(f'Error in Categorical : {e}')
-                        print(f'input obs :\n {x}')
-                        print(f'hidden : \n{hidden}')
-                        print(f'logits : \n{logits}')
-                        print(f'action mask : \n{action_mask}')
-                        print(f'masked logits : \n{masked_logits}')
-                        print(f'org probs : \n{org_probs.probs}')
-                        print(f'masked probs : \n{masked_probs.probs}')
+                    action = masked_probs.sample()
 
                 else: # sample action without mask 
                     print(f'action mask is None, taking action according to policy') 
@@ -341,7 +324,6 @@ def video_save_trigger(episode_index):
         return True 
     else:
         return False
-    # return True
 
 
 def run(args_param):
@@ -353,6 +335,7 @@ def run(args_param):
     args = args_param
     print(f'Training Mode : {args.train_mode}')
 
+    # Set batch size for training policy 
     if args.train_mode == 'train':
         # args = tyro.cli(Args)
         args.batch_size = int(args.num_envs * args.num_steps_rollout)
@@ -360,7 +343,7 @@ def run(args_param):
         args.num_iterations = int(args.total_timesteps // args.batch_size)
         # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
     elif args.train_mode == 'inference':
-        args.num_iterations = 1
+        args.num_iterations = 5
 
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -378,7 +361,8 @@ def run(args_param):
             name=run_name,
             # monitor_gym=True,
             save_code=True, # saves the code used for the run to WandB servers at start
-            resume="allow"
+            resume="allow",
+            id=run_name, # TODO resume training what should this be? 
         )
     
     # Save data in event file that can be opened with TensorBoard
@@ -413,8 +397,9 @@ def run(args_param):
                     obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,) # TODO 
     
-    envs.print_framegrid() # DEBUG target 
+    # envs.print_framegrid() # DEBUG target 
     
+    # Stack observations
     envs = FrameStack(envs, args.num_stacked_obs)
     
     print(f'Action Space : {envs.action_space}')
@@ -422,7 +407,6 @@ def run(args_param):
         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
     if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
         assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported" 
-
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
     if args.train_mode == 'train':
@@ -433,14 +417,17 @@ def run(args_param):
         actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
         logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
         values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    # if train_mode is inference, do not store trajectory, only store rewards, dones
     rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-
+    
+    # Set Agent Network
     if envs.obs_mode == 'frame_grid_singleint':
         agent = Agent(envs).to(device)
-    if envs.obs_mode == 'frame_grid':
+    elif envs.obs_mode == 'frame_grid':
         agent = Agent_CNN(envs, num_stacked_obs=args.num_stacked_obs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    
     # If loading from checkpoint, load the model and optimizer state dictionaries
     if args.train_mode == 'inference':
         assert args.load_checkpoint, "args.load_checkpoint should be True for inference"
@@ -449,22 +436,27 @@ def run(args_param):
     if args.load_checkpoint:
         assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
         checkpoint = torch.load(args.load_checkpoint_path)
-        # Load the model state dictionary
+
         agent.load_state_dict(checkpoint['model_state_dict'])
         # Load the optimizer state dictionary
         if args.train_mode == 'train':
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             global_step = checkpoint['global_step']
-            start_step = global_step % args.num_steps_rollout
-        print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step}!")
+            try: 
+                start_iteration = checkpoint['iteration']
+            except:
+                start_iteration = 0
+            print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step} iteration {start_iteration}!")
+        else:
+            start_iteration = 0
+            print(f"Model loaded from checkpoint {args.load_checkpoint_path} for inference!")
     else:
         global_step = 0
-        start_step = 0
+        start_iteration = 0
     
     # TRY NOT TO MODIFY: start the game
     start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
-    # print(f'Stacked obs after reset : {envs.observation_space}')
     next_obs = torch.Tensor(np.array(next_obs)).to(device) 
     next_done = torch.zeros(args.num_envs).to(device)
 
@@ -489,11 +481,6 @@ def run(args_param):
             frac = 1.0 - (iteration - 1.0) / args.num_iterations
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
-
-        # Set random initialization 
-        # if args.rand_init_steps > 0:
-        #     envs.n_rand_init_steps = args.rand_init_steps # set number of random initialization steps in envs TODO why is this necessary?
-        # print(f'envs.n_rand_init_steps : {envs.n_rand_init_steps}')
 
         # Rollout
         for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
@@ -555,19 +542,18 @@ def run(args_param):
                         logprobs[step] = logprob
                     elif args.train_mode == 'inference':
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
-                # print(f'action : {action} | {envs.action_converter.decode(action)}') # DEBUG decode reverts action to 0,0,0,0?!
             
             # TRY NOT TO MODIFY: execute the game and log data.
             # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
             # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+            if not isinstance(action, torch.Tensor):
+                action = torch.tensor(action)
             next_obs, reward, terminations, truncations, info = envs.step(action)
             next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+            next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
             
             if terminations == True or truncations == True:
-                # print(f"terminated{terminations} or truncated{truncations}!")
-                # print(f"global_step={global_step}, episodic_return={info['final_info']['episode']['r']}, episodic_length={info['final_info']['episode']['l']}")
                 writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
                 writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
 
