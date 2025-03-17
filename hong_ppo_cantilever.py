@@ -265,8 +265,12 @@ class Agent_CNN(nn.Module):
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
-        return self.critic(self.network(x))
-
+        normalized_x = normalize_frame_grid(x)
+        hidden = self.network(normalized_x)
+        # print(f'get value hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
+        value = self.critic(hidden)
+        return value
+    
     def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
 
         # check if there is a batch layer, and if not, add one (batch size 1)
