@@ -502,7 +502,7 @@ def run(args_param):
             if envs.reset_env_bool == True: # initialize random actions at reset of env
                 rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
             
-            if rand_init_counter > 0: # sample random action at initialization of episode
+            if rand_init_counter > 0 and args.train_mode == 'train': # sample random action at initialization of episode
                 # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
                 with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
                     curr_mask = envs.get_action_mask() 
@@ -510,7 +510,8 @@ def run(args_param):
                     if isinstance(action, torch.Tensor):
                         action = action.cpu().numpy()
                     envs.add_rand_action(action)
-                    if args.train_mode == 'train':
+                    # if args.train_mode == 'train':
+                    try: 
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
                     except ValueError as e:
                         print(f'Error in rollout random get_action_and_value : \n{e}')
@@ -540,7 +541,8 @@ def run(args_param):
                             continue
                         actions[step] = action
                         logprobs[step] = logprob
-                    elif args.train_mode == 'inference':
+                        values[step] = value.flatten()
+                    elif args.train_mode == 'inference': # get action without randomness
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
             
             # TRY NOT TO MODIFY: execute the game and log data.
