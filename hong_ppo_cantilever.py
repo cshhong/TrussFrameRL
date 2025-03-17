@@ -493,6 +493,7 @@ def run(args_param):
                                     'model_state_dict': agent.state_dict(),
                                     'optimizer_state_dict': optimizer.state_dict(),
                                     'global_step': global_step,
+                                    'iteration' : iteration, 
                                 }, model_path)
                     print(f"Model saved at global_step {model_path}!")
 
