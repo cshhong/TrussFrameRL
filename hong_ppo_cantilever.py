@@ -249,12 +249,18 @@ class Agent_CNN(nn.Module):
         super().__init__()
         # Network 2 bigger network
         self.network = nn.Sequential(
-            layer_init(nn.Conv2d(num_stacked_obs, 32, 4, stride=2)), # stacked obs shape (stacked, 10, 6)
+            layer_init(nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1)), # (3, 10, 7) -> (32, 10, 7),
+            nn.LayerNorm([32, 10, 7]),
             nn.ReLU(),
-            layer_init(nn.Conv2d(32, 32, 2, stride=1)),
+            layer_init(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)),  # (32, 10, 7) -> (64, 5, 4)
+            nn.LayerNorm([64, 5, 4]),
+            nn.ReLU(),
+            layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)),  # (64, 5, 4) -> (64, 5, 4)
+            nn.LayerNorm([64, 5, 4]), 
             nn.ReLU(),
             nn.Flatten(),
-            layer_init(nn.Linear(32 * 3 * 1, 512)),
+            layer_init(nn.Linear(64 * 5 * 4, 512)), # Final flattened size is 64 * 5 * 4
+            nn.LayerNorm(512),
             nn.ReLU(),
         )
 
