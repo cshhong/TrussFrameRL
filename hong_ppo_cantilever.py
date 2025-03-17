@@ -130,6 +130,18 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
+def get_grad_norm(agent):
+    total_norm = 0
+    for param in agent.parameters():
+        if param.grad is not None:
+            param_norm = param.grad.norm(2).item()
+            total_norm += param_norm ** 2
+            # print(f"Layer: {param.shape} | Grad Norm: {param_norm:.4f}")
+
+    total_norm = total_norm ** 0.5
+    # print(f"Total Gradient Norm: {total_norm:.4f}") 
+
+    return total_norm
 
 
 class Agent(nn.Module):
@@ -654,6 +666,7 @@ def run(args_param):
                     optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
+                    writer.add_scalar("gradients/grad_norm", get_grad_norm(agent), global_step) # DEBUG check if gradients explode
                     optimizer.step()
 
                 if args.target_kl is not None and approx_kl > args.target_kl:
