@@ -6,7 +6,8 @@ Modify ppo.py to
 import os
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
 
 import gymnasium as gym # version 0.28.1 
 import numpy as np
@@ -124,6 +125,12 @@ class Args:
     obs_mode: str = 'frame_grid' # 'frame_grid_singleint'
 
     num_stacked_obs: int = 3 # for frame_grid obs mode
+
+    # boundary conditions
+    bc_height_options: list = field(default_factory=list)# List[int] = [1, 2]
+    bc_length_options: list = field(default_factory=list)#List[int] = [3, 4, 5]
+    bc_loadmag_options: list = field(default_factory=list)#List[int] = [300, 400, 500]
+    bc_inventory_options: list = field(default_factory=list) #List[tuple] = [(10,10), (10,5), (5,5), (8,3)]
 
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -405,7 +412,12 @@ def run(args_param):
                     render_dir = args.render_dir,
                     max_episode_length = 400,
                     obs_mode=args.obs_mode,
-                    rand_init_seed = args.rand_init_seed,) # TODO 
+                    rand_init_seed = args.rand_init_seed,
+                    bc_height_options=args.bc_height_options,
+                    bc_length_options=args.bc_length_options,
+                    bc_loadmag_options=args.bc_loadmag_options,
+                    bc_inventory_options=args.bc_inventory_options,
+                    ) # TODO 
     
     # envs.print_framegrid() # DEBUG target 
     
