@@ -700,7 +700,7 @@ def run(args_param):
                     end = start + args.minibatch_size
                     mb_inds = b_inds[start:end]
                     try: 
-                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds])
+                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds], epsilon_greedy=0)
                     except ValueError as e:
                         print(f'Error in train get_action_and_value : {e}')
                         print(f'input obs :\n {b_obs[mb_inds]}')
