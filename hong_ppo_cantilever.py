@@ -132,6 +132,11 @@ class Args:
     bc_loadmag_options: list = field(default_factory=list)#List[int] = [300, 400, 500]
     bc_inventory_options: list = field(default_factory=list) #List[tuple] = [(10,10), (10,5), (5,5), (8,3)]
 
+    # Grid size
+    frame_grid_size_x: int = 10
+    frame_grid_size_y: int = 5
+    frame_size: int = 2
+
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -251,28 +256,69 @@ def normalize_frame_grid(frame_grid):
 
     return standardized_grid
 
+def conv2d_output_shape(h_in, w_in, kernel_size, stride=1, padding=0):
+    # integer division for PyTorch
+    h_out = (h_in + 2 * padding - kernel_size) // stride + 1
+    w_out = (w_in + 2 * padding - kernel_size) // stride + 1
+    return h_out, w_out
+
+
 class Agent_CNN(nn.Module):
     def __init__(self, envs, num_stacked_obs):
         super().__init__()
-        # Network 2 bigger network
+        H_in, W_in = envs.single_observation_space.shape # (15,7)
+        h1, w1 = conv2d_output_shape(H_in, W_in, kernel_size=3, stride=1, padding=1) # 1) First conv
+        h2, w2 = conv2d_output_shape(h1, w1, kernel_size=3, stride=2, padding=1)  # 2) Second conv
+        h3, w3 = conv2d_output_shape(h2, w2, kernel_size=3, stride=1, padding=1) # 3) Third conv shape
+
         self.network = nn.Sequential(
-            layer_init(nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1)), # (3, 10, 7) -> (32, 10, 7),
-            nn.LayerNorm([32, 10, 7]),
+            nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1),
+            nn.LayerNorm([32, h1, w1]),
             nn.ReLU(),
-            layer_init(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)),  # (32, 10, 7) -> (64, 5, 4)
-            nn.LayerNorm([64, 5, 4]),
+
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([64, h2, w2]),
             nn.ReLU(),
-            layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)),  # (64, 5, 4) -> (64, 5, 4)
-            nn.LayerNorm([64, 5, 4]), 
+
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.LayerNorm([64, h3, w3]),
             nn.ReLU(),
+
             nn.Flatten(),
-            layer_init(nn.Linear(64 * 5 * 4, 512)), # Final flattened size is 64 * 5 * 4
+            nn.Linear(64 * h3 * w3, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
+
         )
+        print(f'Agent_CNN summary : {self.network}')
 
         self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
+
+        print(f'Actor : {self.actor}')
+        print(f'Critic : {self.critic}')
+
+
+        # # Network 2 bigger network
+        # self.network = nn.Sequential(
+        #     layer_init(nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1)), # (3, 10, 7) -> (32, 10, 7),
+        #     # nn.LayerNorm([32, 10, 7]),
+        #     nn.LayerNorm([32, 10, 7]),
+        #     nn.ReLU(),
+        #     layer_init(nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)),  # (32, 10, 7) -> (64, 5, 4)
+        #     nn.LayerNorm([64, 5, 4]),
+        #     nn.ReLU(),
+        #     layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)),  # (64, 5, 4) -> (64, 5, 4)
+        #     nn.LayerNorm([64, 5, 4]), 
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     layer_init(nn.Linear(64 * 5 * 4, 512)), # Final flattened size is 64 * 5 * 4
+        #     nn.LayerNorm(512),
+        #     nn.ReLU(),
+        # )
+
+        # self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+        # self.critic = layer_init(nn.Linear(512, 1), std=1)
     
     def get_value(self, x):
         # check if there is a batch layer, and if not, add one (batch size 1)
@@ -406,6 +452,9 @@ def run(args_param):
     # Use single environment
     envs = gym.make(
                     id=args.env_id,
+                    frame_grid_size_x = args.frame_grid_size_x,
+                    frame_grid_size_y = args.frame_grid_size_y,
+                    frame_size = args.frame_size,
                     render_mode=args.render_mode, 
                     render_interval_eps=args.render_interval,
                     render_interval_consecutive=args.render_interval_count,
@@ -447,7 +496,9 @@ def run(args_param):
     if envs.obs_mode == 'frame_grid_singleint':
         agent = Agent(envs).to(device)
     elif envs.obs_mode == 'frame_grid':
-        agent = Agent_CNN(envs, num_stacked_obs=args.num_stacked_obs).to(device)
+        agent = Agent_CNN(envs, 
+                          num_stacked_obs=args.num_stacked_obs,
+                          ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     
     # If loading from checkpoint, load the model and optimizer state dictionaries
@@ -523,7 +574,6 @@ def run(args_param):
                                     'iteration' : iteration, 
                                 }, model_path)
                     print(f"Model saved at global_step {model_path}!")
-
                 obs[step] = next_obs
             dones[step] = next_done
 
