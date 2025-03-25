@@ -275,20 +275,27 @@ class Agent_CNN(nn.Module):
         h3, w3 = conv2d_output_shape(h2, w2, kernel_size=3, stride=1, padding=1) # 3) Third conv shape
 
         self.network = nn.Sequential(
-            nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1),
-            nn.LayerNorm([32, h1, w1]),
+            # nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1),
+            # nn.LayerNorm([32, h1, w1]),
+            nn.Conv2d(num_stacked_obs, 64, kernel_size=3, stride=1, padding=1),
+            nn.LayerNorm([64, h1, w1]),
             nn.ReLU(),
 
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.LayerNorm([64, h2, w2]),
+            # nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            # nn.LayerNorm([64, h2, w2]),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.LayerNorm([128, h2, w2]),
             nn.ReLU(),
 
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.LayerNorm([64, h3, w3]),
+            # nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            # nn.LayerNorm([64, h3, w3]),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.LayerNorm([128, h3, w3]),
             nn.ReLU(),
 
             nn.Flatten(),
-            nn.Linear(64 * h3 * w3, 512),
+            # nn.Linear(64 * h3 * w3, 512),
+            nn.Linear(128 * h3 * w3, 512),
             nn.LayerNorm(512),
             nn.ReLU(),
 
