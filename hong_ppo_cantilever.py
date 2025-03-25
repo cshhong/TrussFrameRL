@@ -341,6 +341,13 @@ class Agent_CNN(nn.Module):
         return value
     
     def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
+        '''
+        Output
+        action : torch.tensor of shape (batch_size, ) with action selected
+        log_prob : torch.tensor of shape (batch_size, ) with log probability of selected action
+        entropy : torch.tensor of shape (batch_size, ) with entropy of action distribution
+        value : torch.tensor of shape (batch_size, ) with value of state
+        '''
 
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
@@ -384,7 +391,8 @@ class Agent_CNN(nn.Module):
         
         if not isinstance(action, torch.Tensor):
             action = torch.tensor(action)
-        
+        if len(action.shape) == 0:
+            action = action.unsqueeze(0)
         return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(hidden)
 
 def video_save_trigger(episode_index):
