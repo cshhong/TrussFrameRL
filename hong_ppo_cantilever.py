@@ -137,6 +137,9 @@ class Args:
     frame_grid_size_y: int = 5
     frame_size: int = 2
 
+    collect_complete: bool = False # collect complete trajectories in buffer with epsilon greedy
+    collect_complete_epsilon: float = 0.1 # epsilon greedy for complete trajectories
+
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -483,14 +486,44 @@ def run(args_param):
     if args.train_mode == 'train':
         if args.obs_mode == 'frame_grid_singleint':
             obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
+            actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
+            logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            
         elif args.obs_mode == 'frame_grid':
-            obs = torch.zeros((args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape).to(device)
-        actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
-        logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-        values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            # obs_shape = (args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape
+            # action_shape = (args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape
+            # logprobs_shape = (args.num_steps_rollout, args.num_envs)
+            # values_shape = (args.num_steps_rollout, args.num_envs)
+            obs_shape = (args.num_stacked_obs,) + envs.single_observation_space.shape
+            action_shape = (args.num_envs,) + envs.single_action_space.shape
+            logprobs_shape = (args.num_envs,)
+            values_shape = (args.num_envs,)
+            reward_shape = (args.num_envs,)
+            dones_shape = (args.num_envs,)
+
+            if args.collect_complete: # collect complete trajectories
+                obs = np.empty((0,) + obs_shape)
+                actions = np.empty((0,)+ action_shape)
+                logprobs = np.empty((0,)+ logprobs_shape)
+                values = np.empty((0,)+ values_shape)
+                rewards = np.empty((0,)+ reward_shape)
+                dones = np.empty((0,)+ dones_shape)
+                # print(f'buffer shapes | obs : {obs.shape}, actions : {actions.shape}, logprobs :{logprobs.shape}, values : {values.shape}, rewards : {rewards.shape}, dones : {dones.shape}')
+
+            else: # collect all trajectories
+                obs = torch.zeros((args.num_steps_rollout,) + obs_shape).to(device)
+                actions = torch.zeros((args.num_steps_rollout,) + action_shape).to(device)
+                logprobs = torch.zeros((args.num_steps_rollout,) + logprobs_shape).to(device)
+                values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
+                rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+                dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+
     # if train_mode is inference, do not store trajectory, only store rewards, dones
-    rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-    dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    # rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+    # dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     
     # Set Agent Network
     if envs.obs_mode == 'frame_grid_singleint':
@@ -561,21 +594,165 @@ def run(args_param):
         else:
             start_step = 0
 
-        for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
-            global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape)
-            if args.train_mode == 'train':
-                # save checkpoint at intervals
-                if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
-                    model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
-                    torch.save({
-                                    'model_state_dict': agent.state_dict(),
-                                    'optimizer_state_dict': optimizer.state_dict(),
-                                    'global_step': global_step,
-                                    'iteration' : iteration, 
-                                }, model_path)
-                    print(f"Model saved at global_step {model_path}!")
-                obs[step] = next_obs
-            dones[step] = next_done
+        if args.collect_complete: # rollout loop to collect complete rollouts with epsilon greedy
+            # step = 0
+            # collect transition data for each episode, only use those that are completed
+            eps_obs = []
+            eps_actions = []
+            eps_logprobs = []
+            eps_values = []
+            eps_dones = []
+            eps_rewards = []
+            # print(f'buffer \n obs : {obs} \n actions : {actions} \n logprobs : {logprobs} \n values : {values} \n dones : {dones} \n rewards : {rewards}')
+            while obs.shape[0] < args.num_steps_rollout: # run rollout until buffer is full 
+                global_step += args.num_envs # global steps are collected steps 
+                if args.train_mode == 'train':
+                    # save checkpoint at intervals
+                    if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
+                        model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                        torch.save({
+                                        'model_state_dict': agent.state_dict(),
+                                        'optimizer_state_dict': optimizer.state_dict(),
+                                        'global_step': global_step,
+                                        'iteration' : iteration, 
+                                    }, model_path)
+                        print(f"Model with complete rollouts saved at {model_path}!")
+                    eps_obs.append(next_obs)
+                eps_dones.append(next_done)
+
+                if envs.reset_env_bool == True: # initialize random actions at reset of env
+                    rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
+
+                if rand_init_counter > 0 and args.train_mode == 'train': # take random action at initialization of episode
+                    # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
+                    with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                        curr_mask = envs.get_action_mask() 
+                        action = envs.action_space.sample(mask=curr_mask)  # sample random action with action mask
+                        # if isinstance(action, torch.Tensor):
+                        #     action = action.cpu().numpy()
+                        envs.add_rand_action(action)
+                        # if args.train_mode == 'train':
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
+
+                    rand_init_counter -= 1
+
+                else: # ALGO LOGIC: take action according to policy
+                    with torch.no_grad():
+                        curr_mask = envs.get_action_mask()
+                        if args.train_mode == 'train': # get action with epsilon greedy
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                        elif args.train_mode == 'inference': # get action without randomness
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                
+                # log episode action info
+                eps_actions.append(action)
+                eps_logprobs.append(logprob)
+                eps_values.append(value.flatten())
+
+                # make step with action and log reward and termination data
+                # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+                if not isinstance(action, torch.Tensor):
+                    action = torch.tensor(action)
+                next_obs, reward, terminations, truncations, info = envs.step(action)
+                next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
+                next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
+
+                
+                eps_rewards.append(torch.tensor(reward).to(device).view(-1)) # TODO use reward from termination?
+
+                if terminations == True or truncations == True:
+                    writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
+                    writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
+
+                    if truncations == True: # incomplete design
+                        if np.random.rand() < args.collect_complete_epsilon: # only log incomplete designs with epsilon greedy
+                            # save episode data to buffer
+                            obs = np.vstack((obs, np.array(eps_obs)))
+                            actions = np.vstack((actions, np.array(eps_actions)))
+                            logprobs = np.vstack((logprobs, np.array(eps_logprobs)))
+                            values = np.vstack((values, np.array(eps_values)))
+                            rewards = np.vstack((rewards, np.array(eps_rewards)))
+                            dones = np.vstack((dones, np.array(eps_dones)))
+
+                    if terminations == True: # complete design
+                        # save epsiode data to buffer
+                        obs = np.vstack((obs, np.array(eps_obs)))
+                        actions = np.vstack((actions, np.array(eps_actions)))
+                        logprobs = np.vstack((logprobs, np.array(eps_logprobs)))
+                        values = np.vstack((values, np.array(eps_values)))
+                        # term_eps_rewards = np.full((len(eps_rewards), 1), reward) # # use last reward for all steps in episode
+                        # amortize reward over all steps in episode
+                        num_steps = len(eps_rewards)
+                        # Precompute the denominator so the max value normalizes to 1
+                        denom = np.log(1 + np.e * ((num_steps - 1) / num_steps))
+                        # Vectorized decay schedule
+                        term_eps_rewards = (
+                            reward
+                            * (np.log(1 + np.e * (np.arange(num_steps) / num_steps)) / denom)
+                            + 0.1
+                        ).reshape(num_steps, 1)
+                        # print(f'term_eps_rewards : {term_eps_rewards}')
+                        # add batch dimension to term_eps_rewards
+                        rewards = np.vstack((rewards, np.array(term_eps_rewards)))
+                        # rewards = np.vstack((rewards, np.array(eps_rewards)))
+                        dones = np.vstack((dones, np.array(eps_dones)))
+
+                        if envs.render_mode == "rgb_list": # save video
+                            assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
+                            save_video(
+                                        frames=envs.get_render_list(),
+                                        video_folder=args.render_dir,
+                                        fps=envs.metadata["render_fps"],
+                                        # video_length = ,
+                                        # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                        episode_index = term_eps_idx, # why need +1?
+                                        # step_starting_index=step_starting_index,
+                                        episode_trigger = video_save_trigger
+                            )
+                        term_eps_idx += 1 # count episodes where designs were completed (terminated)
+                        if args.save_h5:
+                            # Save data to hdf5 file
+                            save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
+                            # Flush (save) data to disk (optional - may slow down training)
+                            h5f.flush()
+
+                    envs.reset(seed=args.seed)
+                    rand_init_counter = args.rand_init_steps # reset random initialization counter
+                    # reset episode buffer
+                    eps_obs = []
+                    eps_actions = []
+                    eps_logprobs = []
+                    eps_values = []
+                    eps_dones = []
+                    eps_rewards = []
+
+            # turn buffer into tensor for training
+            obs = torch.tensor(obs).to(device)[:args.num_steps_rollout]
+            actions = torch.tensor(actions).to(device)[:args.num_steps_rollout]
+            logprobs = torch.tensor(logprobs).to(device)[:args.num_steps_rollout]
+            values = torch.tensor(values).to(device)[:args.num_steps_rollout]
+            dones = torch.tensor(dones).to(device)[:args.num_steps_rollout]
+            rewards = torch.tensor(rewards).to(device)[:args.num_steps_rollout]
+
+
+                
+
+        else: # rollout loop to collect all trajectories
+            for step in range(start_step, args.num_steps_rollout): # total number of steps regardless of number of eps
+                global_step += args.num_envs # shape is (args.num_steps_rollout, args.num_envs, envs.single_observation_space.shape)
+                if args.train_mode == 'train':
+                    # save checkpoint at intervals
+                    if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
+                        model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                        torch.save({
+                                        'model_state_dict': agent.state_dict(),
+                                        'optimizer_state_dict': optimizer.state_dict(),
+                                        'global_step': global_step,
+                                        'iteration' : iteration, 
+                                    }, model_path)
+                        print(f"Model saved at {model_path}!")
+                    obs[step] = next_obs
+                dones[step] = next_done
 
             if envs.reset_env_bool == True: # initialize random actions at reset of env
                 rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
@@ -785,6 +962,15 @@ def run(args_param):
                 if param.requires_grad:
                     writer.add_scalar(f"weights/{name}_mean", param.data.mean().item(), global_step)
                     writer.add_scalar(f"weights/{name}_std", param.data.std().item(), global_step)
+        
+        # reset buffer
+        if args.collect_complete: # collect complete trajectories
+            obs = np.empty((0,) + obs_shape)
+            actions = np.empty((0,)+ action_shape)
+            logprobs = np.empty((0,)+ logprobs_shape)
+            values = np.empty((0,)+ values_shape)
+            rewards = np.empty((0,)+ reward_shape)
+            dones = np.empty((0,)+ dones_shape)
 
     envs.close()
     writer.close()
