@@ -769,88 +769,72 @@ def run(args_param):
                     obs[step] = next_obs
                 dones[step] = next_done
 
-            if envs.reset_env_bool == True: # initialize random actions at reset of env
-                rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
-            
-            if rand_init_counter > 0 and args.train_mode == 'train': # sample random action at initialization of episode
-                # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
-                with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
-                    curr_mask = envs.get_action_mask() 
-                    action = envs.action_space.sample(mask=curr_mask)  # sample random action with action maskz
-                    if isinstance(action, torch.Tensor):
-                        action = action.cpu().numpy()
-                    envs.add_rand_action(action)
-                    # if args.train_mode == 'train':
-                    try: 
+                if envs.reset_env_bool == True: # initialize random actions at reset of env
+                    rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
+                
+                if rand_init_counter > 0 and args.train_mode == 'train': # sample random action at initialization of episode
+                    # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
+                    with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                        curr_mask = envs.get_action_mask() 
+                        action = envs.action_space.sample(mask=curr_mask)  # sample random action with action mask
+                        if isinstance(action, torch.Tensor):
+                            action = action.cpu().numpy()
+                        envs.add_rand_action(action)
+                        # if args.train_mode == 'train':
                         action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
-                    except ValueError as e:
-                        print(f'Error in rollout random get_action_and_value : \n{e}')
-                        print(f'input obs :\n {next_obs}')
-                        print(f'random action : {action}')
-                        print(f'action mask : {curr_mask}')
-                        print(f'logits : {agent.actor((agent.network(next_obs)))}')
-                        continue 
-                    actions[step] = action
-                    logprobs[step] = logprob # log only if not nan
-                    values[step] = value.flatten()
-
-                rand_init_counter -= 1
-
-            else: # ALGO LOGIC: action according to policy
-                with torch.no_grad():
-                    curr_mask = envs.get_action_mask()
-                    if args.train_mode == 'train': # get action with epsilon greedy
-                        try:
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
-                        except ValueError as e:
-                            print(f'Error in rollout policy get_action_and_value : {e}')
-                            print(f'input obs :\n {next_obs}')
-                            print(f'action mask : {curr_mask}')
-                            print(f' agent network output : {agent.network(next_obs).shape}')
-                            # print(f'logits : {agent.actor((torch.flatten(agent.network(next_obs))))}')
-                            continue
                         actions[step] = action
-                        logprobs[step] = logprob
+                        logprobs[step] = logprob # log only if not nan
                         values[step] = value.flatten()
-                    elif args.train_mode == 'inference': # get action without randomness
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
-            
-            # TRY NOT TO MODIFY: execute the game and log data.
-            # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
-            if not isinstance(action, torch.Tensor):
-                action = torch.tensor(action)
-            next_obs, reward, terminations, truncations, info = envs.step(action)
-            next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
-            rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
-            
-            if terminations == True or truncations == True:
-                writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
-                writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
 
-                if terminations == True: # complete design
-                    if envs.render_mode == "rgb_list":
-                        assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
-                        save_video(
-                                    frames=envs.get_render_list(),
-                                    video_folder=args.render_dir,
-                                    fps=envs.metadata["render_fps"],
-                                    # video_length = ,
-                                    # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
-                                    episode_index = term_eps_idx, # why need +1?
-                                    # step_starting_index=step_starting_index,
-                                    episode_trigger = video_save_trigger
-                        )
-                    term_eps_idx += 1 # count episodes where designs were completed (terminated)
-                    if args.save_h5:
-                        # Save data to hdf5 file
-                        save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
-                        # Flush (save) data to disk (optional - may slow down training)
-                        h5f.flush()
+                    rand_init_counter -= 1
 
-                envs.reset(seed=args.seed)
-                rand_init_counter = args.rand_init_steps # reset random initialization counter
+                else: # ALGO LOGIC: action according to policy
+                    with torch.no_grad():
+                        curr_mask = envs.get_action_mask()
+                        if args.train_mode == 'train': # get action with epsilon greedy
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                            # log action info
+                            actions[step] = action
+                            logprobs[step] = logprob
+                            values[step] = value.flatten()
+                        elif args.train_mode == 'inference': # get action without randomness
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                
+                # make step with action and log reward and termination data
+                # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+                if not isinstance(action, torch.Tensor):
+                    action = torch.tensor(action)
+                next_obs, reward, terminations, truncations, info = envs.step(action)
+                next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
+                next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
+                rewards[step] = torch.tensor(reward).to(device).view(-1)
+                
+                if terminations == True or truncations == True:
+                    writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
+                    writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
+
+                    if terminations == True: # complete design
+                        if envs.render_mode == "rgb_list":
+                            assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
+                            save_video(
+                                        frames=envs.get_render_list(),
+                                        video_folder=args.render_dir,
+                                        fps=envs.metadata["render_fps"],
+                                        # video_length = ,
+                                        # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                        episode_index = term_eps_idx, # why need +1?
+                                        # step_starting_index=step_starting_index,
+                                        episode_trigger = video_save_trigger
+                            )
+                        term_eps_idx += 1 # count episodes where designs were completed (terminated)
+                        if args.save_h5:
+                            # Save data to hdf5 file
+                            save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
+                            # Flush (save) data to disk (optional - may slow down training)
+                            h5f.flush()
+
+                    envs.reset(seed=args.seed)
+                    rand_init_counter = args.rand_init_steps # reset random initialization counter
 
 
         # Train policy (actor, critic)
@@ -899,7 +883,7 @@ def run(args_param):
                         print(f'actions : \n{b_actions[mb_inds]}')
                         print(f'logprobs : \n{b_logprobs[mb_inds]}')
                         print(f'inds : \n{mb_inds}')
-                        continue
+                        # continue
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
