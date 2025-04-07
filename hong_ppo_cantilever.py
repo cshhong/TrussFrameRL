@@ -522,7 +522,11 @@ def run(args_param):
                     bc_length_options=args.bc_length_options,
                     bc_loadmag_options=args.bc_loadmag_options,
                     bc_inventory_options=args.bc_inventory_options,
-                    ) # TODO 
+                    num_target_loads = args.num_target_loads,
+                    bc_fixed = args.bc_fixed,
+                    elem_sections = args.elem_sections,
+                    high_util_percentage = args.high_util_percentage,
+                    ) 
     
     # envs.print_framegrid() # DEBUG target 
     
