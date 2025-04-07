@@ -140,6 +140,16 @@ class Args:
     collect_complete: bool = False # collect complete trajectories in buffer with epsilon greedy
     collect_complete_epsilon: float = 0.1 # epsilon greedy for complete trajectories
 
+    num_target_loads: int = 1 # number of target loads to place in the frame
+
+    condition_dim: int = 0 # dimension of condition vector for actor, critic
+
+    bc_fixed = None # fixed boundary condition (optional)
+
+    elem_sections: list = field(default_factory=list) # List[tuple] = [(0.1, 0.1), (0.1, 0.2)]
+
+    high_util_percentage : int = 25 # percentage of high utilization criteria
+
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -183,7 +193,12 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
+    def get_action_and_value(self, 
+                             x, 
+                             fixed_action=None, 
+                             action_mask=None, 
+                             epsilon_greedy=1e-2,
+                             ):
         '''
         get next action based on actor network output
         x : next_obs from previous step (batch_size, obs_space)
@@ -267,12 +282,14 @@ def conv2d_output_shape(h_in, w_in, kernel_size, stride=1, padding=0):
 
 
 class Agent_CNN(nn.Module):
-    def __init__(self, envs, num_stacked_obs):
+    def __init__(self, envs, num_stacked_obs, condition_dim=0):
         super().__init__()
         H_in, W_in = envs.single_observation_space.shape # (15,7)
         h1, w1 = conv2d_output_shape(H_in, W_in, kernel_size=3, stride=1, padding=1) # 1) First conv
         h2, w2 = conv2d_output_shape(h1, w1, kernel_size=3, stride=2, padding=1)  # 2) Second conv
         h3, w3 = conv2d_output_shape(h2, w2, kernel_size=3, stride=1, padding=1) # 3) Third conv shape
+
+        self.condition_dim = condition_dim
 
         self.network = nn.Sequential(
             # nn.Conv2d(num_stacked_obs, 32, kernel_size=3, stride=1, padding=1),
@@ -302,8 +319,12 @@ class Agent_CNN(nn.Module):
         )
         print(f'Agent_CNN summary : {self.network}')
 
-        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
-        self.critic = layer_init(nn.Linear(512, 1), std=1)
+        if self.condition_dim == 0:
+            self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+            self.critic = layer_init(nn.Linear(512, 1), std=1)
+        else: # actor, critic conditioned on target (length, height, loadmag) and inventory (light, medium)
+            self.actor = layer_init(nn.Linear(512 + condition_dim, envs.single_action_space.n), std=0.01)
+            self.critic = layer_init(nn.Linear(512 + condition_dim, 1), std=1)
 
         print(f'Actor : {self.actor}')
         print(f'Critic : {self.critic}')
@@ -330,17 +351,22 @@ class Agent_CNN(nn.Module):
         # self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
         # self.critic = layer_init(nn.Linear(512, 1), std=1)
     
-    def get_value(self, x):
+    def get_value(self, x, envs=None):
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
         normalized_x = normalize_frame_grid(x)
         hidden = self.network(normalized_x)
         # print(f'get value hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
-        value = self.critic(hidden)
+        if self.condition_dim == 0:
+            value = self.critic(hidden)
+        else:
+            condition = torch.tensor(envs.bc_condition)
+            condition = condition.expand(hidden.shape[0], -1)
+            value = self.critic(torch.cat([condition, hidden], dim=1))
         return value
     
-    def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2):
+    def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2, envs=None):
         '''
         Output
         action : torch.tensor of shape (batch_size, ) with action selected
@@ -356,7 +382,13 @@ class Agent_CNN(nn.Module):
         hidden = self.network(normalized_x)
         # print(f'get hidden : {hidden}')
         # print(f'get action hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
-        logits = self.actor(hidden) # these become too large and small causing nan!
+        if self.condition_dim == 0:
+            logits = self.actor(hidden) # these become too large and small causing nan!
+        else:
+            condition = torch.tensor(envs.bc_condition) # target (length, height, loadmag) and inventory (light, medium)
+            # broadcast condition to hidden batch size\
+            condition = condition.expand(hidden.shape[0], -1)
+            logits = self.actor(torch.cat([condition, hidden], dim=1))
         # print(f'logits from actor : \n{logits}')
         org_probs = Categorical(logits=logits)
 
@@ -393,7 +425,13 @@ class Agent_CNN(nn.Module):
             action = torch.tensor(action)
         if len(action.shape) == 0:
             action = action.unsqueeze(0)
-        return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(hidden)
+        
+        # critic value
+        if self.condition_dim == 0:
+            value = self.critic(hidden)
+        else:
+            value = self.critic(torch.cat([condition, hidden], dim=1))
+        return action, org_probs.log_prob(action), org_probs.entropy(), value
 
 def video_save_trigger(episode_index):
     '''
@@ -546,6 +584,7 @@ def run(args_param):
     elif envs.obs_mode == 'frame_grid':
         agent = Agent_CNN(envs, 
                           num_stacked_obs=args.num_stacked_obs,
+                          condition_dim=args.condition_dim,
                           ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     
