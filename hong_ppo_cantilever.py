@@ -710,7 +710,11 @@ def run(args_param):
                         #     action = action.cpu().numpy()
                         envs.add_rand_action(action)
                         # if args.train_mode == 'train':
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, 
+                                                                               fixed_action=action, 
+                                                                               action_mask=curr_mask, 
+                                                                               epsilon_greedy=args.epsilon_greedy,
+                                                                               envs=envs) # get logprob and value for random action
 
                     rand_init_counter -= 1
 
@@ -720,9 +724,15 @@ def run(args_param):
                         if curr_mask is None: 
                             continue
                         if args.train_mode == 'train': # get action with epsilon greedy
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                    action_mask=curr_mask, 
+                                                                                    epsilon_greedy=args.epsilon_greedy,
+                                                                                    envs=envs)
                         elif args.train_mode == 'inference': # get action without randomness
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                    action_mask=curr_mask, 
+                                                                                    epsilon_greedy=0,
+                                                                                    envs=envs)
                 
                 # log episode action info
                 eps_actions.append(action)
@@ -813,8 +823,6 @@ def run(args_param):
             values = torch.tensor(values).to(device)[:args.num_steps_rollout]
             dones = torch.tensor(dones).to(device)[:args.num_steps_rollout]
             rewards = torch.tensor(rewards).to(device)[:args.num_steps_rollout]
-
-
                 
 
         else: # rollout loop to collect all trajectories
@@ -846,7 +854,9 @@ def run(args_param):
                             action = action.cpu().numpy()
                         envs.add_rand_action(action)
                         # if args.train_mode == 'train':
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy) # get logprob and value for random action
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, 
+                                                                               fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy,
+                                                                               envs=envs) # get logprob and value for random action
                         actions[step] = action
                         logprobs[step] = logprob # log only if not nan
                         values[step] = value.flatten()
@@ -859,13 +869,19 @@ def run(args_param):
                         if curr_mask is None: 
                             continue
                         if args.train_mode == 'train': # get action with epsilon greedy
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                    action_mask=curr_mask, 
+                                                                                    epsilon_greedy=args.epsilon_greedy,
+                                                                                    envs=envs)
                             # log action info
                             actions[step] = action
                             logprobs[step] = logprob
                             values[step] = value.flatten()
                         elif args.train_mode == 'inference': # get action without randomness
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=0)
+                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                    action_mask=curr_mask, 
+                                                                                    epsilon_greedy=0,
+                                                                                    envs=envs)
                 
                 # make step with action and log reward and termination data
                 # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
@@ -909,7 +925,7 @@ def run(args_param):
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = agent.get_value(next_obs).reshape(1, -1)
+                next_value = agent.get_value(next_obs,envs=envs).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
                 lastgaelam = 0
                 for t in reversed(range(args.num_steps_rollout)):
@@ -943,7 +959,9 @@ def run(args_param):
                     end = start + args.minibatch_size
                     mb_inds = b_inds[start:end]
                     try: 
-                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], fixed_action=b_actions.long()[mb_inds], epsilon_greedy=0)
+                        _, newlogprob, entropy, newvalue = agent.get_action_and_value(x=b_obs[mb_inds], 
+                                                                                      fixed_action=b_actions.long()[mb_inds], epsilon_greedy=0,
+                                                                                      envs=envs)
                     except ValueError as e:
                         print(f'Error in train get_action_and_value : {e}')
                         print(f'input obs :\n {b_obs[mb_inds]}')
