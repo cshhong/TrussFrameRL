@@ -856,6 +856,8 @@ def run(args_param):
                 else: # ALGO LOGIC: action according to policy
                     with torch.no_grad():
                         curr_mask = envs.get_action_mask()
+                        if curr_mask is None: 
+                            continue
                         if args.train_mode == 'train': # get action with epsilon greedy
                             action, logprob, _, value = agent.get_action_and_value(x=next_obs, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy)
                             # log action info
