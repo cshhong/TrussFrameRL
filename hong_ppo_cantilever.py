@@ -577,6 +577,24 @@ def run(args_param):
                 values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
                 rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
                 dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+    elif args.train_mode == 'inference':
+        if args.obs_mode == 'frame_grid_singleint':
+            rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+            
+        elif args.obs_mode == 'frame_grid':
+            reward_shape = (args.num_envs,)
+            dones_shape = (args.num_envs,)
+
+            if args.collect_complete: # collect complete trajectories
+                rewards = np.empty((0,)+ reward_shape)
+                dones = np.empty((0,)+ dones_shape)
+
+            else: # collect all trajectories
+                rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+                dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+
+
 
     # if train_mode is inference, do not store trajectory, only store rewards, dones
     # rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
