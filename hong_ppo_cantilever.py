@@ -685,7 +685,7 @@ def run(args_param):
                 if args.train_mode == 'train':
                     # save checkpoint at intervals
                     if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
-                        model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                        model_path = f"{args.render_dir}/checkpoint_step{global_step}.pth"
                         torch.save({
                                         'model_state_dict': agent.state_dict(),
                                         'optimizer_state_dict': optimizer.state_dict(),
@@ -819,7 +819,7 @@ def run(args_param):
                 if args.train_mode == 'train':
                     # save checkpoint at intervals
                     if args.save_checkpoint and global_step % args.checkpoint_interval_steps == 0:
-                        model_path = f"checkpoint_{args.exp_name}_step{global_step}.pth"
+                        model_path = f"{args.render_dir}/checkpoint_step{global_step}.pth"
                         torch.save({
                                         'model_state_dict': agent.state_dict(),
                                         'optimizer_state_dict': optimizer.state_dict(),
