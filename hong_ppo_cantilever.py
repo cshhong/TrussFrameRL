@@ -703,6 +703,8 @@ def run(args_param):
                     # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
                     with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
                         curr_mask = envs.get_action_mask() 
+                        if curr_mask is None: 
+                            continue
                         action = envs.action_space.sample(mask=curr_mask)  # sample random action with action mask
                         # if isinstance(action, torch.Tensor):
                         #     action = action.cpu().numpy()
