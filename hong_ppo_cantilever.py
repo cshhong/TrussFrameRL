@@ -1069,14 +1069,6 @@ def run(args_param):
                     writer.add_scalar(f"weights/{name}_mean", param.data.mean().item(), global_step)
                     writer.add_scalar(f"weights/{name}_std", param.data.std().item(), global_step)
         
-        # reset buffer
-        if args.collect_complete: # collect complete trajectories
-            obs = np.empty((0,) + obs_shape)
-            actions = np.empty((0,)+ action_shape)
-            logprobs = np.empty((0,)+ logprobs_shape)
-            values = np.empty((0,)+ values_shape)
-            rewards = np.empty((0,)+ reward_shape)
-            dones = np.empty((0,)+ dones_shape)
 
     envs.close()
     writer.close()
