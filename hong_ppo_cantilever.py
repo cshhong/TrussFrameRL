@@ -809,59 +809,63 @@ def run(args_param):
                 obs[step] = next_obs
             dones[step] = next_done
 
-                if envs.reset_env_bool == True: # initialize random actions at reset of env
-                    rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
-                
-                if rand_init_counter > 0 and args.train_mode == 'train': # sample random action at initialization of episode
-                    # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
-                    with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
-                        curr_mask = envs.get_action_mask() 
-                        action = envs.action_space.sample(mask=curr_mask)  # sample random action with action mask
-                        if isinstance(action, torch.Tensor):
-                            action = action.cpu().numpy()
-                        envs.add_rand_action(action)
-                        # if args.train_mode == 'train':
-                        action, logprob, _, value = agent.get_action_and_value(x=next_obs, 
-                                                                               fixed_action=action, action_mask=curr_mask, epsilon_greedy=args.epsilon_greedy,
-                                                                               envs=envs) # get logprob and value for random action
+            if envs.reset_env_bool == True: # initialize random actions at reset of env
+                rand_init_counter = args.rand_init_steps # Initialize a counter for random initialization steps that counts down (at reset of env after termination)
+            
+            if rand_init_counter > 0 and args.train_mode == 'train': # sample random action at initialization of episode
+                # print(f'step{envs.global_step} random init counter : {rand_init_counter}')
+                with torch.no_grad(): # TODO rightnow envs : single env -> adjust for parallel envs
+                    curr_mask = envs.get_action_mask() 
+                    if curr_mask is None:
+                        continue # try another random action
+                    action = envs.action_space.sample(mask=curr_mask)  # sample random action with action mask
+                    if isinstance(action, torch.Tensor):
+                        action = action.cpu().numpy()
+                    envs.add_rand_action(action)
+                    # if args.train_mode == 'train':
+                    action, logprob, _, value = agent.get_action_and_value(x=next_obs, 
+                                                                            fixed_action=action, 
+                                                                            action_mask=curr_mask, 
+                                                                            epsilon_greedy=0,
+                                                                            envs=envs) # get logprob and value for random action
+                    actions[step] = action
+                    logprobs[step] = logprob # log only if not nan
+                    values[step] = value.flatten()
+
+                rand_init_counter -= 1
+
+            else: # ALGO LOGIC: action according to policy
+                with torch.no_grad():
+                    curr_mask = envs.get_action_mask()
+                    if curr_mask is None: 
+                        continue
+                    if args.train_mode == 'train': # get action with epsilon greedy
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                action_mask=curr_mask, 
+                                                                                epsilon_greedy=args.epsilon_greedy,
+                                                                                envs=envs)
+                        # log action info
                         actions[step] = action
-                        logprobs[step] = logprob # log only if not nan
+                        logprobs[step] = logprob
                         values[step] = value.flatten()
-
-                    rand_init_counter -= 1
-
-                else: # ALGO LOGIC: action according to policy
-                    with torch.no_grad():
-                        curr_mask = envs.get_action_mask()
-                        if curr_mask is None: 
-                            continue
-                        if args.train_mode == 'train': # get action with epsilon greedy
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
-                                                                                    action_mask=curr_mask, 
-                                                                                    epsilon_greedy=args.epsilon_greedy,
-                                                                                    envs=envs)
-                            # log action info
-                            actions[step] = action
-                            logprobs[step] = logprob
-                            values[step] = value.flatten()
-                        elif args.train_mode == 'inference': # get action without randomness
-                            action, logprob, _, value = agent.get_action_and_value(x=next_obs,
-                                                                                    action_mask=curr_mask, 
-                                                                                    epsilon_greedy=0,
-                                                                                    envs=envs)
-                
-                # make step with action and log reward and termination data
-                # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
-                if not isinstance(action, torch.Tensor):
-                    action = torch.tensor(action)
-                next_obs, reward, terminations, truncations, info = envs.step(action)
-                next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
-                next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
-                rewards[step] = torch.tensor(reward).to(device).view(-1)
-                
-                if terminations == True or truncations == True:
-                    writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
-                    writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
+                    elif args.train_mode == 'inference': # get action without randomness
+                        action, logprob, _, value = agent.get_action_and_value(x=next_obs,
+                                                                                action_mask=curr_mask, 
+                                                                                epsilon_greedy=0,
+                                                                                envs=envs)
+            
+            # make step with action and log reward and termination data
+            # next_obs, reward, terminations, truncations, info = envs.step(action.cpu().numpy())
+            if not isinstance(action, torch.Tensor):
+                action = torch.tensor(action)
+            next_obs, reward, terminations, truncations, info = envs.step(action)
+            next_done = np.array([np.logical_or(terminations, truncations)]).astype(int)
+            next_obs, next_done = torch.Tensor(np.array(next_obs)).to(device), torch.Tensor(next_done).to(device)
+            rewards[step] = torch.tensor(reward).to(device).view(-1)
+            
+            if terminations == True or truncations == True:
+                writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
+                writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
 
                     if terminations == True: # complete design
                         if envs.render_mode == "rgb_list":
