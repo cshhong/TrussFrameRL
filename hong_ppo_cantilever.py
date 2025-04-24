@@ -150,6 +150,8 @@ class Args:
 
     vis_utilization : bool = False # visualize utilization of each element in the frame
     frame_count_penalty : bool = False # penalize frame count in reward function
+    reward_utilization_scheme : bool = False
+    add_max_deflection_reward : bool = False # add deflection reward to reward_utilization_scheme
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
