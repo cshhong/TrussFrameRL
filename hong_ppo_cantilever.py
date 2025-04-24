@@ -912,7 +912,7 @@ def run(args_param):
                         ])
                         # print(f'writing to csv : {term_eps_idx}, {terminated}, {boundary_condition}, {inventory}, {allowable_deflection}, {max_deflection}, {utilization_median}, {utilization_std}, {num_frames}')
 
-                    if terminations == True: # complete design
+                if terminations == True: # complete design
                     if envs.render_mode == "rgb_list":
                         assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
                         save_video(
