@@ -661,7 +661,10 @@ def run(args_param):
                     num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
                     elem_sections = args.elem_sections,
-                    high_util_percentage = args.high_util_percentage,
+                    vis_utilization = args.vis_utilization,
+                    frame_count_penalty = args.frame_count_penalty,
+                    reward_utilization_scheme = args.reward_utilization_scheme,
+                    add_max_deflection_reward = args.add_max_deflection_reward,
                     ) 
     
     # envs.print_framegrid() # DEBUG target 
