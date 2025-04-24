@@ -913,27 +913,33 @@ def run(args_param):
                         # print(f'writing to csv : {term_eps_idx}, {terminated}, {boundary_condition}, {inventory}, {allowable_deflection}, {max_deflection}, {utilization_median}, {utilization_std}, {num_frames}')
 
                     if terminations == True: # complete design
-                        if envs.render_mode == "rgb_list":
-                            assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
-                            save_video(
-                                        frames=envs.get_render_list(),
-                                        video_folder=args.render_dir,
-                                        fps=envs.metadata["render_fps"],
-                                        # video_length = ,
-                                        # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
-                                        episode_index = term_eps_idx, # why need +1?
-                                        # step_starting_index=step_starting_index,
-                                        episode_trigger = video_save_trigger
-                            )
-                        term_eps_idx += 1 # count episodes where designs were completed (terminated)
-                        if args.save_h5:
-                            # Save data to hdf5 file
-                            save_episode_hdf5(h5f, term_eps_idx, envs.unwrapped.curr_fea_graph, envs.unwrapped.frames, envs.unwrapped.curr_frame_grid)
-                            # Flush (save) data to disk (optional - may slow down training)
-                            h5f.flush()
+                    if envs.render_mode == "rgb_list":
+                        assert args.render_dir is not None, "Please provide a directory path render_dir for saving the rendered video."
+                        save_video(
+                                    frames=envs.get_render_list(),
+                                    video_folder=args.render_dir,
+                                    fps=envs.metadata["render_fps"],
+                                    # video_length = ,
+                                    # name_prefix = f"train_iter-{iteration}", # (f"{path_prefix}-episode-{episode_index}.mp4")
+                                    episode_index = term_eps_idx, # why need +1?
+                                    # step_starting_index=step_starting_index,
+                                    episode_trigger = video_save_trigger
+                        )
+                    term_eps_idx += 1 # count episodes where designs were completed (terminated)
+                    if args.save_h5:
+                        save_episode_hdf5(h5f, 
+                                          term_eps_idx, 
+                                          envs.unwrapped.curr_fea_graph, 
+                                          envs.unwrapped.frames, 
+                                          envs.unwrapped.curr_frame_grid)
+                        # Flush (save) data to disk (optional - may slow down training)
+                        h5f.flush()
 
-                    envs.reset(seed=args.seed)
-                    rand_init_counter = args.rand_init_steps # reset random initialization counter
+                    
+                    
+
+                envs.reset(seed=args.seed)
+                rand_init_counter = args.rand_init_steps # reset random initialization counter
 
 
         # Train policy (actor, critic)
