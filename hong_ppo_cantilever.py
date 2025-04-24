@@ -138,10 +138,7 @@ class Args:
     frame_grid_size_y: int = 5
     frame_size: int = 2
 
-    collect_complete: bool = False # collect complete trajectories in buffer with epsilon greedy
-    collect_complete_epsilon: float = 0.1 # epsilon greedy for complete trajectories
-
-    num_target_loads: int = 1 # number of target loads to place in the frame
+    num_target_loads: int = 2 # number of target loads to place in the frame
 
     condition_dim: int = 0 # dimension of condition vector for actor, critic
 
