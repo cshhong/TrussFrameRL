@@ -108,7 +108,7 @@ class Args:
     """the number of iterations (computed in runtime)""" 
 
     # train mode
-    train_mode = "train" # "train" or "inference"
+    train_mode = "train" # "train" or "inference" or "baseline"
 
     # load model to resume training / inference
     load_checkpoint: bool = False
