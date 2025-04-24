@@ -152,6 +152,14 @@ class Args:
     frame_count_penalty : bool = False # penalize frame count in reward function
     reward_utilization_scheme : bool = False
     add_max_deflection_reward : bool = False # add deflection reward to reward_utilization_scheme
+
+    # Baseline mode
+    baseline_mode : bool = False
+    baseline_csv_dir : str = "baseline/"
+    num_baseline_runs : int = 2
+    baseline_n_expand : int = 3
+    baseline_n_permute : int = 3
+
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
