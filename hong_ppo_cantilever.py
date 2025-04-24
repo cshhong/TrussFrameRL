@@ -576,8 +576,29 @@ def run(args_param):
         args.minibatch_size = int(args.batch_size // args.num_minibatches)
         args.num_iterations = int(args.total_timesteps // args.batch_size)
         # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
-    elif args.train_mode == 'inference':
-        args.num_iterations = 5
+    if args.save_csv_train == True :
+        # Initialize the CSV file with a header
+        os.makedirs(args.render_dir, exist_ok=True) # Ensure the render directory exists
+        csv_dir = os.path.join(args.render_dir, "results.csv")
+        with open(csv_dir, mode='w', newline='') as csv_file:
+            csv_writer = csv.writer(csv_file)
+            csv_writer.writerow(["Episode", 
+                             "Terminated",
+                             "Boundary Condition", 
+                             "Inventory",
+                             "Allowable Deflection", 
+                             "Max Deflection", 
+                             "Number of Failed Elements",
+                             "Utilization Min",
+                             "Utilization Max",
+                             "Utilization Median", 
+                             "Utilization Std", 
+                             "Utilization P90",
+                             "Number of Frames",
+                             "Frame Grid",
+                             "Episode Reward"])  # Add relevant headers
+        print(f"CSV file initialized at {csv_dir}")
+
 
     # Convert the timestamp to a human-readable format
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
