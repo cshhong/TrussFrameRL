@@ -146,7 +146,7 @@ class Args:
 
     elem_sections: list = field(default_factory=list) # List[tuple] = [(0.1, 0.1), (0.1, 0.2)]
 
-    high_util_percentage : int = 25 # percentage of high utilization criteria
+    save_csv_train : bool = False # save csv file with results of each episode train/inference mode
 
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
