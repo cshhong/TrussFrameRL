@@ -148,6 +148,7 @@ class Args:
 
     save_csv_train : bool = False # save csv file with results of each episode train/inference mode
 
+    vis_utilization : bool = False # visualize utilization of each element in the frame
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
