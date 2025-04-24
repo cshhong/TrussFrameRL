@@ -700,22 +700,13 @@ def run(args_param):
             reward_shape = (args.num_envs,)
             dones_shape = (args.num_envs,)
 
-            if args.collect_complete: # collect complete trajectories
-                obs = np.empty((0,) + obs_shape)
-                actions = np.empty((0,)+ action_shape)
-                logprobs = np.empty((0,)+ logprobs_shape)
-                values = np.empty((0,)+ values_shape)
-                rewards = np.empty((0,)+ reward_shape)
-                dones = np.empty((0,)+ dones_shape)
-                # print(f'buffer shapes | obs : {obs.shape}, actions : {actions.shape}, logprobs :{logprobs.shape}, values : {values.shape}, rewards : {rewards.shape}, dones : {dones.shape}')
-
-            else: # collect all trajectories
-                obs = torch.zeros((args.num_steps_rollout,) + obs_shape).to(device)
-                actions = torch.zeros((args.num_steps_rollout,) + action_shape).to(device)
-                logprobs = torch.zeros((args.num_steps_rollout,) + logprobs_shape).to(device)
-                values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
-                rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-                dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+            obs = torch.zeros((args.num_steps_rollout,) + obs_shape).to(device)
+            actions = torch.zeros((args.num_steps_rollout,) + action_shape).to(device)
+            logprobs = torch.zeros((args.num_steps_rollout,) + logprobs_shape).to(device)
+            values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
+            rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+            dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+    
     elif args.train_mode == 'inference':
         if args.obs_mode == 'frame_grid_singleint':
             rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
@@ -725,16 +716,9 @@ def run(args_param):
             reward_shape = (args.num_envs,)
             dones_shape = (args.num_envs,)
 
-            if args.collect_complete: # collect complete trajectories
-                rewards = np.empty((0,)+ reward_shape)
-                dones = np.empty((0,)+ dones_shape)
-
-            else: # collect all trajectories
-                rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-                dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
-
-
-
+            rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+            dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+        
     # if train_mode is inference, do not store trajectory, only store rewards, dones
     # rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     # dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
