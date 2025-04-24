@@ -866,6 +866,51 @@ def run(args_param):
             if terminations == True or truncations == True:
                 writer.add_scalar("charts/episodic_return", info['final_info']["episode"]["reward"], global_step)
                 writer.add_scalar("charts/episodic_length", info['final_info']["episode"]["length"], global_step)
+                # Write the episode data to the CSV file
+                if args.save_csv_train: # Save data to CSV
+                    boundary_condition = envs.unwrapped.csv_bc # left height, left length, left magnitude, right height, right length, right magnitude
+                    inventory = envs.unwrapped.csv_inventory # light, medium
+                    allowable_deflection = envs.unwrapped.allowable_deflection
+                    episode_reward = envs.unwrapped.episode_reward
+                    if terminations == True:
+                        terminated = True
+                        # Calculate or retrieve values for the current episode
+                        max_deflection = envs.unwrapped.max_deflection
+                        utilization_median = envs.unwrapped.utilization_median
+                        utilization_std = envs.unwrapped.utilization_std
+                        utilization_percentile = envs.unwrapped.utilization_ninety_percentile
+                        num_frames = len(envs.unwrapped.frames)
+                        num_failed = len(envs.unwrapped.curr_fea_graph.failed_elements)
+                        frame_grid = envs.unwrapped.curr_frame_grid
+                    elif truncations == True:
+                        terminated = False
+                        max_deflection = None
+                        utilization_median = None
+                        utilization_std = None
+                        utilization_percentile = None
+                        num_frames = None
+                        num_failed = None
+                        frame_grid = None
+
+                    with open(csv_dir, mode='a', newline='') as csv_file:
+                        csv_writer = csv.writer(csv_file)    
+                        # Write the row for the current episode
+                        csv_writer.writerow([
+                            term_eps_idx,
+                            terminated,
+                            boundary_condition,
+                            inventory,
+                            allowable_deflection,
+                            max_deflection,
+                            num_failed,
+                            utilization_median,
+                            utilization_std,
+                            utilization_percentile,
+                            num_frames,
+                            frame_grid,
+                            episode_reward,
+                        ])
+                        # print(f'writing to csv : {term_eps_idx}, {terminated}, {boundary_condition}, {inventory}, {allowable_deflection}, {max_deflection}, {utilization_median}, {utilization_std}, {num_frames}')
 
                     if terminations == True: # complete design
                         if envs.render_mode == "rgb_list":
