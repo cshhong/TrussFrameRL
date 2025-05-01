@@ -55,7 +55,7 @@ class Args:
     render_dir: str = "render"
     # Additional arguments (Hong)
     """save h5 file used for plotting all terminated episodes"""
-    save_h5: bool = True
+    save_h5: bool = False
     render_interval: int = 1000 # interval (num eps) to save render for render mode "rgb_end_interval" and "rgb_list"
     render_interval_count : int = 10 # number of consecutive renders to save for render mode "rgb_list" at each interval 
     # Algorithm specific arguments
