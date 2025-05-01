@@ -675,6 +675,7 @@ def run(args_param):
                              "Utilization Median", 
                              "Utilization Std", 
                              "Utilization P90",
+                             "Utilization All",
                              "Number of Frames",
                              "Frame Grid",
                              "Episode Reward"])  # Add relevant headers
