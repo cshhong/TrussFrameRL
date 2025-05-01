@@ -458,6 +458,82 @@ def video_save_trigger(episode_index):
     else:
         return False
 
+def run_render_from_csv(args_param):
+    '''
+    Used to render unique designs
+    open csv file
+    create environment 
+    Within env 
+        one epsiode / one step 
+            at reset 
+                open csv file with designs
+                for each row get Frame Grid column value 
+                env.render_fixed_framegrid - run fea and render 
+    '''
+    global args 
+    args = args_param
+    print(f'#####Rendering from CSV #####')
+    
+    # Random seed
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = args.torch_deterministic
+    
+    #Device
+    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+
+    envs = gym.make(
+                    id=args.env_id,
+                    frame_grid_size_x = args.frame_grid_size_x,
+                    frame_grid_size_y = args.frame_grid_size_y,
+                    frame_size = args.frame_size,
+                    render_mode=args.render_mode, 
+                    render_interval_eps=args.render_interval,
+                    render_interval_consecutive=args.render_interval_count,
+                    render_dir = args.render_dir,
+                    max_episode_length = 400,
+                    obs_mode=args.obs_mode,
+                    rand_init_seed = args.rand_init_seed,
+                    bc_height_options=args.bc_height_options,
+                    bc_length_options=args.bc_length_options,
+                    bc_loadmag_options=args.bc_loadmag_options,
+                    bc_inventory_options=args.bc_inventory_options,
+                    num_target_loads = args.num_target_loads,
+                    bc_fixed = args.bc_fixed,
+                    elem_sections = args.elem_sections,
+                    vis_utilization = args.vis_utilization,
+                    frame_count_penalty = args.frame_count_penalty,
+                    reward_utilization_scheme = args.reward_utilization_scheme,
+                    add_max_deflection_reward = args.add_max_deflection_reward,
+                    render_from_csv_mode = True,
+                    render_from_csv_path = args.render_from_csv_path,
+                    ) 
+    
+    if args.obs_mode == 'frame_grid':
+        reward_shape = (args.num_envs,)
+        dones_shape = (args.num_envs,)
+
+        rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+        dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+
+    # Run Env
+    global_step = 0
+    start_step = 0
+
+    start_time = time.time()
+    next_obs, _ = envs.reset(seed=args.seed)
+    next_obs = torch.Tensor(np.array(next_obs)).to(device) 
+    next_done = torch.zeros(args.num_envs).to(device)
+
+    # set some kind of limit to how long this should run
+
+    # print(f'Running baseline for {args.num_baseline_runs} runs')
+    random_action = envs.action_space.sample() # sample random action
+    envs.step(random_action)
+
+
+
 def run_sample_baseline(args_param):
     '''
     use cantilever environment to sample random baseline
