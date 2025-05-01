@@ -958,18 +958,24 @@ def run(args_param):
                         terminated = True
                         # Calculate or retrieve values for the current episode
                         max_deflection = envs.unwrapped.max_deflection
+                        utilization_min=envs.unwrapped.utilization_min
+                        utilization_max=envs.unwrapped.utilization_max
                         utilization_median = envs.unwrapped.utilization_median
                         utilization_std = envs.unwrapped.utilization_std
                         utilization_percentile = envs.unwrapped.utilization_ninety_percentile
+                        utilization_all = [utilization for _, _, utilization in envs.unwrapped.edge_utilization]
                         num_frames = len(envs.unwrapped.frames)
                         num_failed = len(envs.unwrapped.curr_fea_graph.failed_elements)
                         frame_grid = envs.unwrapped.curr_frame_grid
                     elif truncations == True:
                         terminated = False
                         max_deflection = None
+                        utilization_min=None
+                        utilization_max=None
                         utilization_median = None
                         utilization_std = None
                         utilization_percentile = None
+                        utilization_all = None
                         num_frames = None
                         num_failed = None
                         frame_grid = None
