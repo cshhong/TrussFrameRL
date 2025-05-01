@@ -564,7 +564,7 @@ def run_sample_baseline(args_param):
     # Initialize csv
     # Initialize the CSV file with a header
     os.makedirs(args.baseline_csv_dir, exist_ok=True) # Ensure the baseline directory exists
-    baseline_csv_path = os.path.join(args.baseline_csv_dir, "baseline_test.csv")
+    baseline_csv_path = os.path.join(args.baseline_csv_dir, "baseline_all.csv")
     with open(baseline_csv_path, mode='w', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
         csv_writer.writerow(["Episode", 
