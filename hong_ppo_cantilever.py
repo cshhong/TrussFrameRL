@@ -636,10 +636,9 @@ def run_sample_baseline(args_param):
 
     # set some kind of limit to how long this should run
 
-    print(f'Running baseline for {args.num_baseline_runs} runs')
+    # print(f'Running baseline for {args.num_baseline_runs} runs')
     random_action = envs.action_space.sample() # sample random action
     envs.step(random_action)
-
 
 def run(args_param):
     '''
@@ -648,7 +647,7 @@ def run(args_param):
     '''
     global args # to use same args in video_save_trigger
     args = args_param
-    print(f'Training Mode : {args.train_mode}')
+    print(f'#####Training Mode : {args.train_mode}#####')
 
     # Set batch size for training policy 
     if args.train_mode == 'train':
@@ -657,13 +656,17 @@ def run(args_param):
         args.minibatch_size = int(args.batch_size // args.num_minibatches)
         args.num_iterations = int(args.total_timesteps // args.batch_size)
         # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
+    
+    # if args.train_mode == 'inference':
+    #     args.num_iterations = 10
     if args.save_csv_train == True :
         # Initialize the CSV file with a header
         os.makedirs(args.render_dir, exist_ok=True) # Ensure the render directory exists
         csv_dir = os.path.join(args.render_dir, "results.csv")
         with open(csv_dir, mode='w', newline='') as csv_file:
             csv_writer = csv.writer(csv_file)
-            csv_writer.writerow(["Episode", 
+            csv_writer.writerow([
+                            "Episode", 
                              "Terminated",
                              "Boundary Condition", 
                              "Inventory",
