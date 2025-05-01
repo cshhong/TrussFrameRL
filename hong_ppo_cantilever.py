@@ -953,7 +953,7 @@ def run(args_param):
                     boundary_condition = envs.unwrapped.csv_bc # left height, left length, left magnitude, right height, right length, right magnitude
                     inventory = envs.unwrapped.csv_inventory # light, medium
                     allowable_deflection = envs.unwrapped.allowable_deflection
-                    episode_reward = envs.unwrapped.episode_reward
+                    episode_reward = envs.unwrapped.episode_return
                     if terminations == True:
                         terminated = True
                         # Calculate or retrieve values for the current episode
