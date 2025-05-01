@@ -160,6 +160,10 @@ class Args:
     baseline_n_expand : int = 3
     baseline_n_permute : int = 3
 
+    # Render from CSV mode
+    render_from_csv_mode : bool = False
+    render_from_csv_path : str = None
+
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
