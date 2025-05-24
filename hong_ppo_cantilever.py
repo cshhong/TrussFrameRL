@@ -123,8 +123,6 @@ class Args:
     epsilon_greedy: float = 1e-3
 
     # observation mode
-    obs_mode: str = 'frame_grid' # 'frame_grid_singleint'
-
     num_stacked_obs: int = 3 # for frame_grid obs mode
 
     # boundary conditions
@@ -217,7 +215,6 @@ def conv2d_output_shape(h_in, w_in, kernel_size, stride=1, padding=0):
     h_out = (h_in + 2 * padding - kernel_size) // stride + 1
     w_out = (w_in + 2 * padding - kernel_size) // stride + 1
     return h_out, w_out
-
 
 class Agent_CNN(nn.Module):
     def __init__(self, envs, num_stacked_obs, condition_dim=0):
@@ -417,7 +414,6 @@ def run_render_from_csv(args_param):
                     render_interval_consecutive=args.render_interval_count,
                     render_dir = args.render_dir,
                     max_episode_length = 400,
-                    obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,
                     bc_height_options=args.bc_height_options,
                     bc_length_options=args.bc_length_options,
@@ -519,7 +515,6 @@ def run_sample_baseline(args_param):
                     render_interval_consecutive=args.render_interval_count,
                     render_dir = args.render_dir,
                     max_episode_length = 400,
-                    obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,
                     bc_height_options=args.bc_height_options,
                     bc_length_options=args.bc_length_options,
@@ -662,7 +657,6 @@ def run(args_param):
                     render_interval_consecutive=args.render_interval_count,
                     render_dir = args.render_dir,
                     max_episode_length = 400,
-                    obs_mode=args.obs_mode,
                     rand_init_seed = args.rand_init_seed,
                     bc_height_options=args.bc_height_options,
                     bc_length_options=args.bc_length_options,
