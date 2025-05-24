@@ -865,12 +865,18 @@ def run(args_param):
                         terminated = True
                         # Calculate or retrieve values for the current episode
                         max_deflection = envs.unwrapped.max_deflection
-                        utilization_min=envs.unwrapped.utilization_min
-                        utilization_max=envs.unwrapped.utilization_max
-                        utilization_median = envs.unwrapped.utilization_median
-                        utilization_std = envs.unwrapped.utilization_std
-                        utilization_percentile = envs.unwrapped.utilization_ninety_percentile
-                        utilization_all = [utilization for _, _, utilization in envs.unwrapped.edge_utilization]
+                        # utilization_min=envs.unwrapped.utilization_min
+                        # utilization_max=envs.unwrapped.utilization_max
+                        # utilization_median = envs.unwrapped.utilization_median
+                        # utilization_std = envs.unwrapped.utilization_std
+                        # utilization_percentile = envs.unwrapped.utilization_ninety_percentile
+                        utilization_all_signed = [utilization for center_x, center_y, utilization, dir in envs.unwrapped.edge_utilization]
+                        utilization_all = np.abs(np.array(utilization_all_signed))
+                        utilization_min= np.min(utilization_all)
+                        utilization_max= np.max(utilization_all)
+                        utilization_median = np.median(utilization_all)
+                        utilization_std = np.std(utilization_all)
+                        utilization_percentile = np.percentile(utilization_all, 90)
                         num_frames = len(envs.unwrapped.frames)
                         num_failed = len(envs.unwrapped.curr_fea_graph.failed_elements)
                         frame_grid = envs.unwrapped.curr_frame_grid
