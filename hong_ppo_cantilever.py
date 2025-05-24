@@ -22,8 +22,6 @@ from datetime import datetime
 
 from gymnasium.utils.save_video import save_video
 
-from libs.TrussFrameASAP.PerformanceMap.h5_utils import *
-
 from tqdm import tqdm
 
 if torch.cuda.is_available():
@@ -53,9 +51,8 @@ class Args:
     # """whether to capture videos of the agent performances (check out `videos` folder)"""
     render_mode: str = None #  [None, "debug_all", "debug_valid", "rgb_list", "debug_end", "rgb_end", "rgb_end_interval"]
     render_dir: str = "render"
+    
     # Additional arguments (Hong)
-    """save h5 file used for plotting all terminated episodes"""
-    save_h5: bool = False
     render_interval: int = 1000 # interval (num eps) to save render for render mode "rgb_end_interval" and "rgb_list"
     render_interval_count : int = 10 # number of consecutive renders to save for render mode "rgb_list" at each interval 
     # Algorithm specific arguments
@@ -451,8 +448,6 @@ def run_render_from_csv(args_param):
     random_action = envs.action_space.sample() # sample random action
     envs.step(random_action)
 
-
-
 def run_sample_baseline(args_param):
     '''
     use cantilever environment to sample random baseline
@@ -751,16 +746,6 @@ def run(args_param):
     # Episode count 
     term_eps_idx = 0 # count episodes where designs were completed (terminated)
 
-    # create h5py file
-    if args.save_h5:
-        # Open the HDF5 file at the beginning of rollout
-        h5dir = 'train_h5'
-        save_hdf5_filename = os.path.join(h5dir, f'{run_name}.h5')
-        h5f = h5py.File(save_hdf5_filename, 'a', track_order=True)  # Use 'w' to overwrite or 'a' to append
-
-        with h5py.File(save_hdf5_filename, 'a', track_order=True) as f:
-            save_env_render_properties(f, envs)
-
     # Start iterations
     for iteration in tqdm(range(start_iteration, args.num_iterations + 1), desc="Iterations"):
         # Annealing the rate if instructed to do so.
@@ -924,17 +909,6 @@ def run(args_param):
                                     episode_trigger = video_save_trigger
                         )
                     term_eps_idx += 1 # count episodes where designs were completed (terminated)
-                    if args.save_h5:
-                        save_episode_hdf5(h5f, 
-                                          term_eps_idx, 
-                                          envs.unwrapped.curr_fea_graph, 
-                                          envs.unwrapped.frames, 
-                                          envs.unwrapped.curr_frame_grid)
-                        # Flush (save) data to disk (optional - may slow down training)
-                        h5f.flush()
-
-                    
-                    
 
                 envs.reset(seed=args.seed)
                 rand_init_counter = args.rand_init_steps # reset random initialization counter
