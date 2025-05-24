@@ -149,7 +149,9 @@ class Args:
     save_csv_train : bool = False # save csv file with results of each episode train/inference mode
 
     vis_utilization : bool = False # visualize utilization of each element in the frame
+
     frame_count_penalty : bool = False # penalize frame count in reward function
+
     reward_utilization_scheme : bool = False
     add_max_deflection_reward : bool = False # add deflection reward to reward_utilization_scheme
 
@@ -181,85 +183,7 @@ def get_grad_norm(agent):
     # print(f"Total Gradient Norm: {total_norm:.4f}") 
 
     return total_norm
-
-
-class Agent(nn.Module):
-    def __init__(self, envs):
-        '''
-        envs : Gymnasium.vector.VectorEnv object (https://gymnasium.farama.org/api/vector/#gymnasium.vector.VectorEnv)
-        '''
-        super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
-        self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01),
-        )
-
-    def get_value(self, x):
-        return self.critic(x)
-
-    def get_action_and_value(self, 
-                             x, 
-                             fixed_action=None, 
-                             action_mask=None, 
-                             epsilon_greedy=1e-2,
-                             ):
-        '''
-        get next action based on actor network output
-        x : next_obs from previous step (batch_size, obs_space)
-        action_mask : np.ndarray of shape (n,) and dtype np.int8 where 1 represents valid actions and 0 invalid / infeasible
-
-        * actions are selected with action mask, but log probabilities are calculated without action mask
-        return : action, log_prob, entropy, value
-        # TODO what are the probs of unused cells? how does it affect overall logit distribution and approxmiate kl divergence?
-        '''
-        logits = self.actor(x) # (action_space, )
-        org_probs = Categorical(logits=logits)
-
-        # Action selection 
-        if fixed_action == None:
-            # Epsilon greedy action selection
-            if np.random.rand() < epsilon_greedy:
-                if action_mask is not None:
-                    # print(f'    epsilon_greedy random action with action mask')
-                    valid_actions = np.where(action_mask == 1)[0]
-                    action = torch.tensor(np.random.choice(valid_actions))
-                else:
-                    # print(f'    action mask is None (epsilon_greedy random action)')
-                    action = torch.tensor(np.random.randint(len(org_probs.probs)))
-            else:
-                if action_mask is not None: # mask invalid actions to get next action
-                    masked_logits = logits.clone()  # Clone logits to avoid modifying the original tensor
-                    # Ensure action_mask has the correct shape
-                    if len(action_mask.shape) == 1:
-                        action_mask = torch.tensor(action_mask).unsqueeze(0)  # Add batch dimension to action_mask if needed
-                    masked_logits[action_mask == 0] = -float('inf')  # Set logits of undesirable actions to -inf
-                    masked_probs = Categorical(logits=masked_logits) # masked probs
-
-                    action = masked_probs.sample()
-                    
-                else: # sample action without mask
-                    print(f'action mask is None, taking action according to policy') 
-                    action = org_probs.sample()
-        else:
-            action = fixed_action
-
-        if not isinstance(action, torch.Tensor):
-            action = torch.tensor(action)
-
-        return action, org_probs.log_prob(action), org_probs.entropy(), self.critic(x)
     
-
-
 def normalize_frame_grid(frame_grid):
     """
     Standardizes a frame grid so that the mean is 0 and the standard deviation is 1.
@@ -331,7 +255,7 @@ class Agent_CNN(nn.Module):
             nn.ReLU(),
 
         )
-        print(f'Agent_CNN summary : {self.network}')
+        # print(f'Agent_CNN summary : {self.network}')
 
         if self.condition_dim == 0:
             self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
@@ -340,8 +264,8 @@ class Agent_CNN(nn.Module):
             self.actor = layer_init(nn.Linear(512 + condition_dim, envs.single_action_space.n), std=0.01)
             self.critic = layer_init(nn.Linear(512 + condition_dim, 1), std=1)
 
-        print(f'Actor : {self.actor}')
-        print(f'Critic : {self.critic}')
+        # print(f'Actor : {self.actor}')
+        # print(f'Critic : {self.critic}')
 
 
         # # Network 2 bigger network
@@ -510,12 +434,11 @@ def run_render_from_csv(args_param):
                     render_from_csv_path = args.render_from_csv_path,
                     ) 
     
-    if args.obs_mode == 'frame_grid':
-        reward_shape = (args.num_envs,)
-        dones_shape = (args.num_envs,)
+    reward_shape = (args.num_envs,)
+    dones_shape = (args.num_envs,)
 
-        rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-        dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+    rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+    dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
 
     # Run Env
     global_step = 0
@@ -618,12 +541,11 @@ def run_sample_baseline(args_param):
     # Stack observations
     # envs = FrameStack(envs, args.num_stacked_obs) # DEBUG not really needed
 
-    if args.obs_mode == 'frame_grid':
-        reward_shape = (args.num_envs,)
-        dones_shape = (args.num_envs,)
+    reward_shape = (args.num_envs,)
+    dones_shape = (args.num_envs,)
 
-        rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-        dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+    rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+    dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
 
     # Run Env
     global_step = 0
@@ -639,6 +561,9 @@ def run_sample_baseline(args_param):
     # print(f'Running baseline for {args.num_baseline_runs} runs')
     random_action = envs.action_space.sample() # sample random action
     envs.step(random_action)
+
+    # close env
+    # envs.close()
 
 def run(args_param):
     '''
@@ -765,57 +690,36 @@ def run(args_param):
 
     # ALGO Logic: Storage setup (takes into consideration multiple environments)
     if args.train_mode == 'train':
-        if args.obs_mode == 'frame_grid_singleint':
-            obs = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_observation_space.shape).to(device)
-            actions = torch.zeros((args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape).to(device)
-            logprobs = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            values = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            
-        elif args.obs_mode == 'frame_grid':
-            # obs_shape = (args.num_steps_rollout, args.num_stacked_obs) + envs.single_observation_space.shape
-            # action_shape = (args.num_steps_rollout, args.num_envs) + envs.single_action_space.shape
-            # logprobs_shape = (args.num_steps_rollout, args.num_envs)
-            # values_shape = (args.num_steps_rollout, args.num_envs)
-            obs_shape = (args.num_stacked_obs,) + envs.single_observation_space.shape
-            action_shape = (args.num_envs,) + envs.single_action_space.shape
-            logprobs_shape = (args.num_envs,)
-            values_shape = (args.num_envs,)
-            reward_shape = (args.num_envs,)
-            dones_shape = (args.num_envs,)
+        obs_shape = (args.num_stacked_obs,) + envs.single_observation_space.shape
+        action_shape = (args.num_envs,) + envs.single_action_space.shape
+        logprobs_shape = (args.num_envs,)
+        values_shape = (args.num_envs,)
+        reward_shape = (args.num_envs,)
+        dones_shape = (args.num_envs,)
 
-            obs = torch.zeros((args.num_steps_rollout,) + obs_shape).to(device)
-            actions = torch.zeros((args.num_steps_rollout,) + action_shape).to(device)
-            logprobs = torch.zeros((args.num_steps_rollout,) + logprobs_shape).to(device)
-            values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
-            rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-            dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+        obs = torch.zeros((args.num_steps_rollout,) + obs_shape).to(device)
+        actions = torch.zeros((args.num_steps_rollout,) + action_shape).to(device)
+        logprobs = torch.zeros((args.num_steps_rollout,) + logprobs_shape).to(device)
+        values = torch.zeros((args.num_steps_rollout,) + values_shape).to(device)
+        rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+        dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
     
     elif args.train_mode == 'inference':
-        if args.obs_mode == 'frame_grid_singleint':
-            rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-            
-        elif args.obs_mode == 'frame_grid':
-            reward_shape = (args.num_envs,)
-            dones_shape = (args.num_envs,)
+        reward_shape = (args.num_envs,)
+        dones_shape = (args.num_envs,)
 
-            rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
-            dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
-        
+        rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
+        dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
+    
     # if train_mode is inference, do not store trajectory, only store rewards, dones
     # rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     # dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
     
     # Set Agent Network
-    if envs.obs_mode == 'frame_grid_singleint':
-        agent = Agent(envs).to(device)
-    elif envs.obs_mode == 'frame_grid':
-        agent = Agent_CNN(envs, 
-                          num_stacked_obs=args.num_stacked_obs,
-                          condition_dim=args.condition_dim,
-                          ).to(device)
+    agent = Agent_CNN(envs, 
+                        num_stacked_obs=args.num_stacked_obs,
+                        condition_dim=args.condition_dim,
+                        ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     
     # If loading from checkpoint, load the model and optimizer state dictionaries
@@ -1056,10 +960,7 @@ def run(args_param):
                 returns = advantages + values
 
             # flatten the batch
-            if args.obs_mode == "frame_grid_singleint":
-                b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
-            elif args.obs_mode == "frame_grid":
-                b_obs = obs.reshape((-1,) + (args.num_stacked_obs,) + envs.single_observation_space.shape)
+            b_obs = obs.reshape((-1,) + (args.num_stacked_obs,) + envs.single_observation_space.shape)
             b_logprobs = logprobs.reshape(-1)
             b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
             b_advantages = advantages.reshape(-1)
