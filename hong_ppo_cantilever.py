@@ -418,11 +418,7 @@ def run_render_from_csv(args_param):
                     bc_inventory_options=args.bc_inventory_options,
                     num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
-                    elem_sections = args.elem_sections,
                     vis_utilization = args.vis_utilization,
-                    frame_count_penalty = args.frame_count_penalty,
-                    reward_utilization_scheme = args.reward_utilization_scheme,
-                    add_max_deflection_reward = args.add_max_deflection_reward,
                     render_from_csv_mode = True,
                     render_from_csv_path = args.render_from_csv_path,
                     ) 
@@ -517,11 +513,7 @@ def run_sample_baseline(args_param):
                     bc_inventory_options=args.bc_inventory_options,
                     num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
-                    elem_sections = args.elem_sections,
                     vis_utilization = args.vis_utilization,
-                    frame_count_penalty = args.frame_count_penalty,
-                    reward_utilization_scheme = args.reward_utilization_scheme,
-                    add_max_deflection_reward = args.add_max_deflection_reward,
                     baseline_mode = True,
                     baseline_csv_path = baseline_csv_path,
                     baseline_eps_count = args.num_baseline_runs,
@@ -659,11 +651,7 @@ def run(args_param):
                     bc_inventory_options=args.bc_inventory_options,
                     num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
-                    elem_sections = args.elem_sections,
                     vis_utilization = args.vis_utilization,
-                    frame_count_penalty = args.frame_count_penalty,
-                    reward_utilization_scheme = args.reward_utilization_scheme,
-                    add_max_deflection_reward = args.add_max_deflection_reward,
                     ) 
     
     # envs.print_framegrid() # DEBUG target 
@@ -671,7 +659,6 @@ def run(args_param):
     # Stack observations
     envs = FrameStack(envs, args.num_stacked_obs)
     
-    print(f'Action Space : {envs.action_space}')
     if isinstance(envs, gym.Env): # single env
         assert isinstance(envs.action_space, gym.spaces.Discrete), "only discrete action space is supported"
     if isinstance(envs, gym.vector.SyncVectorEnv): # for parallel envs
