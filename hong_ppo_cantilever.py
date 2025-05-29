@@ -172,11 +172,10 @@ def get_grad_norm(agent):
 
     return total_norm
     
-def normalize_frame_grid(frame_grid):
+def normalize_array(frame_grid):
     """
     Standardizes a frame grid so that the mean is 0 and the standard deviation is 1.
     
-    - load frame (-1) → replaced with 6
     - Standardization: (X - mean) / std
     
     Args:
@@ -186,7 +185,7 @@ def normalize_frame_grid(frame_grid):
         torch.Tensor: The standardized grid with mean 0 and std 1.
     """
     # Replace -1 (load frame) with 6
-    frame_grid = np.where(frame_grid == -1, 6, frame_grid)
+    # frame_grid = np.where(frame_grid == -1, 6, frame_grid) 
 
     # Convert to tensor
     frame_grid = torch.tensor(frame_grid, dtype=torch.float32)
@@ -280,15 +279,19 @@ class Agent_CNN(nn.Module):
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
-        normalized_x = normalize_frame_grid(x)
+        normalized_x = normalize_array(x)
         hidden = self.network(normalized_x)
         # print(f'get value hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
         if self.condition_dim == 0:
             value = self.critic(hidden)
         else:
-            condition = torch.tensor(envs.bc_condition)
-            condition = condition.expand(hidden.shape[0], -1)
-            value = self.critic(torch.cat([condition, hidden], dim=1))
+            # normalize condition
+            normalized_condition = normalize_array(envs.bc_condition)
+            normalized_condition = normalized_condition.expand(hidden.shape[0], -1) # broadcast condition to hidden batch size\
+            value = self.critic(torch.cat([normalized_condition, hidden], dim=1))
+            # condition = torch.tensor(envs.bc_condition)
+            # condition = condition.expand(hidden.shape[0], -1)
+            # value = self.critic(torch.cat([condition, hidden], dim=1))
         return value
     
     def get_action_and_value(self, x, fixed_action=None, action_mask=None, epsilon_greedy=1e-2, envs=None):
@@ -303,17 +306,20 @@ class Agent_CNN(nn.Module):
         # check if there is a batch layer, and if not, add one (batch size 1)
         if len(x.shape) == 3:
             x = x.unsqueeze(0)
-        normalized_x = normalize_frame_grid(x)
+        normalized_x = normalize_array(x)
         hidden = self.network(normalized_x)
         # print(f'get hidden : {hidden}')
         # print(f'get action hidden : mean {torch.mean(hidden)} std {torch.std(hidden)}')
         if self.condition_dim == 0:
             logits = self.actor(hidden) # these become too large and small causing nan!
         else:
-            condition = torch.tensor(envs.bc_condition) # target (length, height, loadmag) and inventory (light, medium)
-            # broadcast condition to hidden batch size\
-            condition = condition.expand(hidden.shape[0], -1)
-            logits = self.actor(torch.cat([condition, hidden], dim=1))
+            normalized_condition = normalize_array(envs.bc_condition)
+            normalized_condition = normalized_condition.expand(hidden.shape[0], -1) # broadcast condition to hidden batch size\
+            logits = self.actor(torch.cat([normalized_condition, hidden], dim=1))
+            # condition = torch.tensor(envs.bc_condition) # target (length, height, loadmag) and inventory (light, medium)
+            # # broadcast condition to hidden batch size\
+            # condition = condition.expand(hidden.shape[0], -1)
+            # logits = self.actor(torch.cat([condition, hidden], dim=1))
         # print(f'logits from actor : \n{logits}')
         org_probs = Categorical(logits=logits)
 
