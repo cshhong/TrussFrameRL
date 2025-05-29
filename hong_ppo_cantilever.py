@@ -361,7 +361,8 @@ class Agent_CNN(nn.Module):
         if self.condition_dim == 0:
             value = self.critic(hidden)
         else:
-            value = self.critic(torch.cat([condition, hidden], dim=1))
+            # value = self.critic(torch.cat([condition, hidden], dim=1))
+            value = self.critic(torch.cat([normalized_condition, hidden], dim=1))
         return action, org_probs.log_prob(action), org_probs.entropy(), value
 
 def video_save_trigger(episode_index):
