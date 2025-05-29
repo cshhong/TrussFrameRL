@@ -139,16 +139,9 @@ class Args:
 
     bc_fixed = None # fixed boundary condition (optional)
 
-    elem_sections: list = field(default_factory=list) # List[tuple] = [(0.1, 0.1), (0.1, 0.2)]
-
     save_csv_train : bool = False # save csv file with results of each episode train/inference mode
 
     vis_utilization : bool = False # visualize utilization of each element in the frame
-
-    frame_count_penalty : bool = False # penalize frame count in reward function
-
-    reward_utilization_scheme : bool = False
-    add_max_deflection_reward : bool = False # add deflection reward to reward_utilization_scheme
 
     # Baseline mode
     baseline_mode : bool = False
