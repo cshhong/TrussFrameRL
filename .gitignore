@@ -1,12 +1,26 @@
 train_h5/
 training_results/
 temp/
-# TrussFrameASAP/
 cleanrl/
 
 wandb/
 runs/
 .DS_Store
 .vscode/
+*.pyc
+*.png
+TODO.txt 
 
 render/
+
+results_April/
+
+results_*/
+
+*_results/
+*_gif/
+*_training_efficiency/
+baseline/
+
+Apr*
+May*
