@@ -8,7 +8,7 @@ import random
 import time
 import csv
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple, TypedDict # provide static type cheching for dictionaries that follow schema
 
 import gymnasium as gym # version 0.28.1 
 import numpy as np
@@ -30,6 +30,28 @@ else:
     print("CUDA is not available. Using CPU.")
 
 from gymnasium.wrappers import FrameStack
+
+class BoundaryConditionDict(TypedDict):
+    '''
+    TypedDict for boundary conditions in the environment.
+    Coordinate system sets frame grid x center at 0, y=0 at 0 
+    e.g. boundary_conditions is a list of BoundaryConditionDict objects, each containing:
+    [
+        {
+            "targets": [[2, 5, 150], [0, -4, 0]],
+            "supports": [[0, 0]],
+            "inventory": [60, 0, 0]
+        },
+        {
+            "targets": [[3, 4, 150], [0, -4, 0]],
+            "supports": [[0, 0], [1, 0]],
+            "inventory": [60, 0, 0]
+        },
+    ]
+    '''
+    targets: List[Tuple[int, int, float]]
+    supports: List[Tuple[int, int]]
+    inventory: Tuple[int, ...]
 
 @dataclass
 class Args:
@@ -123,10 +145,7 @@ class Args:
     num_stacked_obs: int = 3 # for frame_grid obs mode
 
     # boundary conditions
-    bc_height_options: list = field(default_factory=list)# List[int] = [1, 2]
-    bc_length_options: list = field(default_factory=list)#List[int] = [3, 4, 5]
-    bc_loadmag_options: list = field(default_factory=list)#List[int] = [300, 400, 500]
-    bc_inventory_options: list = field(default_factory=list) #List[tuple] = [(10,10), (10,5), (5,5), (8,3)]
+    boundary_conditions : List[BoundaryConditionDict] = field(default_factory=list)  # List of boundary condition dictionaries
 
     # Grid size
     frame_grid_size_x: int = 10
@@ -645,11 +664,8 @@ def run(args_param):
                     render_dir = args.render_dir,
                     max_episode_length = 400,
                     rand_init_seed = args.rand_init_seed,
-                    bc_height_options=args.bc_height_options,
-                    bc_length_options=args.bc_length_options,
-                    bc_loadmag_options=args.bc_loadmag_options,
-                    bc_inventory_options=args.bc_inventory_options,
-                    num_target_loads = args.num_target_loads,
+                    bcs = args.boundary_conditions, # List of boundary condition dictionaries
+                    # num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
                     vis_utilization = args.vis_utilization,
                     ) 
