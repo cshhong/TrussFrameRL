@@ -712,6 +712,8 @@ def run(args_param):
         assert args.load_checkpoint, "args.load_checkpoint should be True for inference"
         global_step = 0
         start_step = 0
+        term_eps_idx = 0
+
     if args.load_checkpoint:
         assert args.load_checkpoint_path is not None, "Please provide a checkpoint path for loading the model."
         checkpoint = torch.load(args.load_checkpoint_path)
@@ -725,22 +727,24 @@ def run(args_param):
                 start_iteration = checkpoint['iteration']
             except:
                 start_iteration = 0
-            print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step} iteration {start_iteration}!")
+            try:
+                term_eps_idx = checkpoint['epsiode_count']
+            except:
+                term_eps_idx = 0
+            print(f"Model loaded from checkpoint {args.load_checkpoint_path} at global step {global_step} iteration {start_iteration} and episode {term_eps_idx}!")
         else:
             start_iteration = 0
             print(f"Model loaded from checkpoint {args.load_checkpoint_path} for inference!")
     else:
         global_step = 0
         start_iteration = 0
+        term_eps_idx = 0
     
     # TRY NOT TO MODIFY: start the game
     start_time = time.time()
     next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.Tensor(np.array(next_obs)).to(device) 
     next_done = torch.zeros(args.num_envs).to(device)
-
-    # Episode count 
-    term_eps_idx = 0 # count episodes where designs were completed (terminated)
 
     # Start iterations
     for iteration in tqdm(range(start_iteration, args.num_iterations + 1), desc="Iterations"):
@@ -768,6 +772,7 @@ def run(args_param):
                                     'optimizer_state_dict': optimizer.state_dict(),
                                     'global_step': global_step,
                                     'iteration' : iteration, 
+                                    'epsiode_count': term_eps_idx,
                                 }, model_path)
                     print(f"Model saved at {model_path}!")
                 obs[step] = next_obs
