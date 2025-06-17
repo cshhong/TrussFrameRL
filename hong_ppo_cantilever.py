@@ -301,10 +301,10 @@ class Agent_CNN(nn.Module):
             value = self.critic(hidden)
         else:
             # normalize condition
-            normalized_condition = normalize_array(envs.bc_condition)
+            normalized_condition = normalize_array(envs.network_condition)
             normalized_condition = normalized_condition.expand(hidden.shape[0], -1) # broadcast condition to hidden batch size\
             value = self.critic(torch.cat([normalized_condition, hidden], dim=1))
-            # condition = torch.tensor(envs.bc_condition)
+            # condition = torch.tensor(envs.network_condition)
             # condition = condition.expand(hidden.shape[0], -1)
             # value = self.critic(torch.cat([condition, hidden], dim=1))
         return value
@@ -328,10 +328,10 @@ class Agent_CNN(nn.Module):
         if self.condition_dim == 0:
             logits = self.actor(hidden) # these become too large and small causing nan!
         else:
-            normalized_condition = normalize_array(envs.bc_condition)
+            normalized_condition = normalize_array(envs.network_condition)
             normalized_condition = normalized_condition.expand(hidden.shape[0], -1) # broadcast condition to hidden batch size\
             logits = self.actor(torch.cat([normalized_condition, hidden], dim=1))
-            # condition = torch.tensor(envs.bc_condition) # target (length, height, loadmag) and inventory (light, medium)
+            # condition = torch.tensor(envs.network_condition) # target (length, height, loadmag) and inventory (light, medium)
             # # broadcast condition to hidden batch size\
             # condition = condition.expand(hidden.shape[0], -1)
             # logits = self.actor(torch.cat([condition, hidden], dim=1))
