@@ -640,13 +640,7 @@ def run(args_param):
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    # env setup (parallel environment)
-    # SyncVectorEnv is a wrapper to vectorize environments to run in parallel
-    # envs = gym.vector.SyncVectorEnv(
-    #     [make_env(args.env_id, i, args.capture_video, run_name) for i in range(args.num_envs)],
-    # )
-    
-    # Use single environment
+    # # Use single environment
     envs = gym.make(
                     id=args.env_id,
                     frame_grid_size_x = args.frame_grid_size_x,
