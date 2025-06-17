@@ -152,10 +152,6 @@ class Args:
     frame_grid_size_y: int = 5
     frame_size: int = 2
 
-    num_target_loads: int = 2 # number of target loads to place in the frame
-
-    condition_dim: int = 0 # dimension of condition vector for actor, critic
-
     bc_fixed = None # fixed boundary condition (optional)
 
     save_csv_train : bool = False # save csv file with results of each episode train/inference mode
@@ -435,7 +431,6 @@ def run_render_from_csv(args_param):
                     bc_length_options=args.bc_length_options,
                     bc_loadmag_options=args.bc_loadmag_options,
                     bc_inventory_options=args.bc_inventory_options,
-                    num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
                     vis_utilization = args.vis_utilization,
                     render_from_csv_mode = True,
@@ -530,7 +525,6 @@ def run_sample_baseline(args_param):
                     bc_length_options=args.bc_length_options,
                     bc_loadmag_options=args.bc_loadmag_options,
                     bc_inventory_options=args.bc_inventory_options,
-                    num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
                     vis_utilization = args.vis_utilization,
                     baseline_mode = True,
@@ -665,7 +659,6 @@ def run(args_param):
                     max_episode_length = 400,
                     rand_init_seed = args.rand_init_seed,
                     bcs = args.boundary_conditions, # List of boundary condition dictionaries
-                    # num_target_loads = args.num_target_loads,
                     bc_fixed = args.bc_fixed,
                     vis_utilization = args.vis_utilization,
                     ) 
@@ -702,15 +695,15 @@ def run(args_param):
 
         rewards = torch.zeros((args.num_steps_rollout,) + reward_shape).to(device)
         dones = torch.zeros((args.num_steps_rollout,) + dones_shape).to(device)
-    
-    # if train_mode is inference, do not store trajectory, only store rewards, dones
-    # rewards = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
-    # dones = torch.zeros((args.num_steps_rollout, args.num_envs)).to(device)
+
+    # get condition dim from environment number of targets
+    # conditions are concatenated (frame_x, frame_y) for each target frame
+    condition_dim = envs.num_target_loads * 2 # (frame_x, frame_y) for each target frame
     
     # Set Agent Network
     agent = Agent_CNN(envs, 
                         num_stacked_obs=args.num_stacked_obs,
-                        condition_dim=args.condition_dim,
+                        condition_dim=condition_dim,
                         ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     
