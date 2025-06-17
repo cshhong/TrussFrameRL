@@ -169,6 +169,7 @@ class Args:
     render_from_csv_mode : bool = False
     render_from_csv_path : str = None
 
+## Network related helper functions
 def layer_init(layer, std=np.sqrt(1.0), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -187,9 +188,17 @@ def get_grad_norm(agent):
 
     return total_norm
     
+def conv2d_output_shape(h_in, w_in, kernel_size, stride=1, padding=0):
+    # integer division for PyTorch
+    h_out = (h_in + 2 * padding - kernel_size) // stride + 1
+    w_out = (w_in + 2 * padding - kernel_size) // stride + 1
+    return h_out, w_out
+
+## Normalization function for frame grid
 def normalize_array(frame_grid):
     """
     Standardizes a frame grid so that the mean is 0 and the standard deviation is 1.
+    Used in get_action, get_action_and_value to normalize the input frame grid before passing it through the network.
     
     - Standardization: (X - mean) / std
     
@@ -213,12 +222,6 @@ def normalize_array(frame_grid):
     standardized_grid = (frame_grid - mean) / (std + 1e-8)  # Small epsilon to avoid division by zero
 
     return standardized_grid
-
-def conv2d_output_shape(h_in, w_in, kernel_size, stride=1, padding=0):
-    # integer division for PyTorch
-    h_out = (h_in + 2 * padding - kernel_size) // stride + 1
-    w_out = (w_in + 2 * padding - kernel_size) // stride + 1
-    return h_out, w_out
 
 class Agent_CNN(nn.Module):
     def __init__(self, envs, num_stacked_obs, condition_dim=0):
@@ -577,8 +580,6 @@ def run(args_param):
         args.num_iterations = int(args.total_timesteps // args.batch_size)
         # args.checkpoint_interval_steps = int(args.total_timesteps // 10) # save model every 10% of total timesteps
     
-    # if args.train_mode == 'inference':
-    #     args.num_iterations = 10
     if args.save_csv_train == True :
         # Initialize the CSV file with a header
         os.makedirs(args.render_dir, exist_ok=True) # Ensure the render directory exists
@@ -612,7 +613,6 @@ def run(args_param):
 
     if args.track_wb:
         import wandb
-
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
@@ -657,9 +657,7 @@ def run(args_param):
                     vis_utilization = args.vis_utilization,
                     ) 
     
-    # envs.print_framegrid() # DEBUG target 
-    
-    # Stack observations
+    # # Stack observations
     envs = FrameStack(envs, args.num_stacked_obs)
     
     if isinstance(envs, gym.Env): # single env
