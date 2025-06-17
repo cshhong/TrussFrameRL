@@ -212,7 +212,14 @@ def normalize_array(frame_grid):
     # frame_grid = np.where(frame_grid == -1, 6, frame_grid) 
 
     # Convert to tensor
-    frame_grid = torch.tensor(frame_grid, dtype=torch.float32)
+    if not isinstance(frame_grid, torch.Tensor):
+        if isinstance(frame_grid, list):
+            frame_grid = np.array(frame_grid, dtype=np.float32)
+            frame_grid = torch.tensor(frame_grid, dtype=torch.float32)
+        elif isinstance(frame_grid, np.ndarray):
+            frame_grid = torch.tensor(frame_grid, dtype=torch.float32)
+        else:
+            raise ValueError("Input frame_grid must be a numpy array or a torch tensor.")
 
     # Compute mean and std
     mean = frame_grid.mean()
