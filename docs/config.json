@@ -1,0 +1,57 @@
+{
+  "PAPER_TITLE": "Deep reinforcement learning for efficient exploration of combinatorial structural design spaces",
+  "AUTHOR_NAMES": "Chloe S.H. Hong, Keith J. Lee, Caitlin T. Mueller",
+  "FIRST_AUTHOR_NAME": "Chloe S.H. Hong",
+  "SECOND_AUTHOR_NAME": "Keith J. Lee", 
+  "THIRD_AUTHOR_NAME": "Caitlin T. Mueller",
+  "INSTITUTION_OR_LAB_NAME": "Massachusetts Institute of Technology",
+  "CONFERENCE_NAME": "IASS 2025",
+  "BRIEF_DESCRIPTION_OF_YOUR_RESEARCH_CONTRIBUTION_AND_FINDINGS": "Deep reinforcement learning framework for automated structural design achieving significant efficiency improvements over traditional methods",
+  "YOUR_DOMAIN": "cshhong.github.io",
+  "ARXIV_PAPER_ID": "2507.22804",
+  
+  "FIRST_AUTHOR_PERSONAL_LINK": "https://cshhong.github.io",
+  "SECOND_AUTHOR_PERSONAL_LINK": "https://keithjlee.com/",
+  "THIRD_AUTHOR_PERSONAL_LINK": "http://digitalstructures.mit.edu/",
+  
+  "YOUR_REPO_HERE": "cshhong/TrussFrameRL",
+  
+  "KEYWORD1": "reinforcement learning",
+  "KEYWORD2": "structural design", 
+  "KEYWORD3": "deep learning",
+  
+  "FIRST_AUTHOR_LAST": "Hong",
+  "FIRST_AUTHOR_FIRST": "Chloe S.H.",
+  "SECOND_AUTHOR_LAST": "Lee", 
+  "SECOND_AUTHOR_FIRST": "Keith J.",
+  "THIRD_AUTHOR_LAST": "Mueller",
+  "THIRD_AUTHOR_FIRST": "Caitlin T.",
+  
+  "YOUR_TWITTER_HANDLE": "@your_lab_twitter",
+  "AUTHOR_TWITTER_HANDLE": "@cshhong",
+  "INSTITUTION_NAME": "Massachusetts Institute of Technology",
+  "YOUR_INSTITUTION_WEBSITE": "mit.edu",
+  
+  "FULL_ABSTRACT_TEXT_HERE": "Traditional structural design relies heavily on human expertise and iterative optimization processes. We introduce TrussFrame-RL, a deep reinforcement learning framework that automates the design of truss structures by learning optimal placement policies through interaction with a physics-based environment...",
+  
+  "BIBTEX_ID": "hong2024deep",
+  "BIBTEX_AUTHORS": "Hong, Chloe S.H. and Lee, Keith J. and Mueller, Caitlin T.",
+  "CONFERENCE_OR_JOURNAL_NAME": "International Association for Shell and Spatial Structures",
+  "PUBLICATION_YEAR": "2025",
+  "YOUR_PROJECT_URL": "https://cshhong.github.io/TrussFrameRL/",
+  
+  "YOUTUBE_VIDEO_ID": "JkaxUblCGz0",
+  "VIDEO_DESCRIPTION": "Overview of our deep reinforcement learning approach for truss frame design",
+  
+  "IMAGE_1_DESCRIPTION": "Reinforcement learning agent exploring design space",
+  "IMAGE_2_DESCRIPTION": "Comparison of optimized vs traditional designs", 
+  "IMAGE_3_DESCRIPTION": "Performance metrics across different loading conditions",
+  "IMAGE_4_DESCRIPTION": "Generalization to complex structural geometries",
+  
+  "PAPER_ID_1": "2023.12345",
+  "PAPER_ID_2": "2022.67890", 
+  "PAPER_ID_3": "2021.11111",
+  
+  "YOUR_PROJECT_PAGE": "TrussFrameRL",
+  "YOUR_GITHUB_USERNAME": "cshhong"
+}

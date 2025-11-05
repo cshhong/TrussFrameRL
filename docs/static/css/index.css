@@ -100,12 +100,12 @@ body {
 }
 
 .hero-body {
-  padding: 4rem 1.5rem;
+  padding: 3rem 0rem;
 }
 
 .teaser .hero-body {
-  padding-top: 2rem;
-  padding-bottom: 4rem;
+  padding-top: 0rem;
+  padding-bottom: 0rem;
 }
 
 .teaser {
@@ -120,6 +120,22 @@ body {
     color: var(--text-primary) !important;
     margin-bottom: 2rem !important;
     line-height: 1.1 !important;
+}
+
+.title.is-1.publication-title {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 700 !important;
+    color: var(--text-primary) !important;
+    margin-bottom: 2rem !important;
+    line-height: 1.1 !important;
+    font-size: 2.5rem !important; /* Adjust as needed */
+
+    /* Add these for multiline control */
+    max-width: 90% !important;  /* Limit width to force wrapping */
+    margin-left: auto !important;
+    margin-right: auto !important;
+    word-wrap: break-word !important;
+    hyphens: auto !important;
 }
 
 .publication-banner {
@@ -261,13 +277,16 @@ body {
 .results-carousel .item {
   margin: 1rem;
   overflow: hidden;
-  padding: 1.5rem;
+  padding: 0.75rem;
   font-size: 0;
   background: var(--background-primary);
   border-radius: var(--border-radius-lg);
   box-shadow: var(--shadow-md);
   transition: var(--transition);
   border: 1px solid var(--border-color);
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .results-carousel .item:hover {
@@ -284,22 +303,29 @@ body {
 }
 
 .results-carousel .subtitle {
-  font-size: 1rem !important;
+  font-size: 0.75rem !important;
   color: var(--text-secondary);
-  margin-top: 1rem;
+  margin-top: 1.5rem;
   font-weight: 500;
 }
 
 /* Pagination and Misc Improvements */
+
 .slider-pagination .slider-page {
-  background: var(--primary-color);
+  /* background: var(--primary-color); */
+  background: var(--text-secondary);
   border-radius: 50%;
   transition: var(--transition);
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  cursor: pointer;
 }
 
 .slider-pagination .slider-page.is-active {
-  background: var(--primary-hover);
-  transform: scale(1.2);
+  /* background: var(--primary-hover); */
+  background: var(--text-secondary);
+  transform: scale(2.0);
 }
 
 .eql-cntrb { 
@@ -310,14 +336,17 @@ body {
 
 /* Section Titles */
 .title.is-3 {
-  font-family: 'Inter', sans-serif !important;
-  font-weight: 700 !important;
+  font-family: 'Noto Sans', sans-serif !important;
+  font-weight: 500 !important;
   color: var(--text-primary);
-  margin-bottom: 2rem !important;
+  margin-bottom: 1rem !important;
   position: relative;
-  padding-bottom: 1rem;
+  padding-bottom: 0rem;
+  font-size: 1.75rem !important;
 }
 
+/* Pink bar under h2 titles - commented out */
+/*
 .title.is-3::after {
   content: '';
   position: absolute;
@@ -329,12 +358,16 @@ body {
   background: var(--gradient-accent);
   border-radius: 2px;
 }
+*/
 
 /* Content Improvements */
 .content.has-text-justified {
+  font-family: 'Noto Sans', sans-serif;
   font-size: 1.1rem;
-  line-height: 1.8;
-  color: var(--text-secondary);
+  font-weight: 400;
+  line-height: 1.4; 
+  /* color: var(--text-secondary); */
+  color: var(--text-primary);
 }
 
 .content.has-text-justified p {
@@ -351,6 +384,7 @@ body {
 .footer .content {
   color: var(--text-secondary);
   line-height: 1.7;
+  font-size: 0.75rem;
 }
 
 .footer a {
